@@ -341,6 +341,7 @@ struct piano_roll {
 	struct played_note played_notes[MAX_PLAYED_NOTES];
 	struct song* song;
 	float gauge;
+	int gauge_last_step;
 };
 
 static void piano_roll_init(struct piano_roll* p, struct song* song)
@@ -355,9 +356,40 @@ static void piano_roll_update_position(struct piano_roll* p, struct audio* audio
 	p->time_in_seconds = audio_position_to_seconds(audio, audio_position);
 }
 
+static void piano_roll_gauge_dstep(struct piano_roll* p, int match, float dstep)
+{
+	float dpenalty = match ? (dstep / (float)p->song->lpb) : 1.0f;
+	if (dpenalty > 1.0f) dpenalty = 1.0f;
+	float good_threshold = 0.25f;
+	p->gauge -= ((dpenalty * dpenalty) - (good_threshold * good_threshold)) * 0.1f;
+}
+
 static void piano_roll_update_gauge(struct piano_roll* p)
 {
-	//p->gauge -= 0.001f;
+	float current_step = (p->time_in_seconds * (float)p->song->bpm * (float)p->song->lpb) / 60.0;
+	int step_until = floorf(current_step - (float)p->song->lpb);
+	for (int step = p->gauge_last_step; step < step_until; step++) {
+		if (step < 0 || step >= p->song->length) continue;
+		int d = p->song->drums[step];
+		if (d == 0) continue;
+
+		float step_time = (((float)step / (float)p->song->lpb) / (float)p->song->bpm) * 60.0;
+		
+		int match = 0;
+		float dt_min;
+		for (int i = 0; i < MAX_PLAYED_NOTES; i++) {
+			struct played_note* note = &p->played_notes[i];
+			if ((d & (1<<note->drum_id)) == 0) continue;
+			float dt = fabsf(note->time_in_seconds - step_time);
+			if (!match || dt < dt_min) {
+				match = 1;
+				dt_min = dt;
+			}
+		}
+		float dstep_min = (dt_min * (float)p->song->bpm * (float)p->song->lpb) / 60.0;
+		piano_roll_gauge_dstep(p, match, dstep_min);
+	}
+	p->gauge_last_step = step_until;
 }
 
 static void piano_roll_gauge_play(struct piano_roll* p, struct played_note* note)
@@ -382,11 +414,7 @@ static void piano_roll_gauge_play(struct piano_roll* p, struct played_note* note
 		}
 	}
 
-	float dpenalty = match ? (dstep_min / (float)p->song->lpb) : 1.0f;
-	if (dpenalty > 1.0f) dpenalty = 1.0f;
-
-	float good_threshold = 0.25f;
-	p->gauge -= ((dpenalty * dpenalty) - (good_threshold * good_threshold)) * 0.1f;
+	piano_roll_gauge_dstep(p, match, dstep_min);
 }
 
 static void piano_roll_register_drum_control_feedback(struct piano_roll* p, struct audio* audio, struct drum_control_feedback* fb)
