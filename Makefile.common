@@ -1,5 +1,7 @@
 all: $(EXE)
 
+XX=./xrns-export.sh
+
 a.o: a.c
 	$(CC) $(CFLAGS) -c a.c
 
@@ -9,7 +11,10 @@ m.o: m.c
 dotd.o: dotd.c a.h m.h
 	$(CC) $(CFLAGS) -c dotd.c
 
-$(EXE): dotd.o a.o m.o
+test.xrns.inc.c: test.xrns
+	$(XX) test.xrns > test.xrns.inc.c
+
+$(EXE): dotd.o a.o m.o test.xrns.inc.c
 	$(CC) dotd.o a.o m.o -o $(EXE) $(LINK)
 
 clean:

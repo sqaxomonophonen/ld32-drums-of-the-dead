@@ -7,6 +7,10 @@
 #include "a.h"
 #include "m.h"
 
+// SONGS
+#include "song.h"
+#include "test.xrns.inc.c"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
