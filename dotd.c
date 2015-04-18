@@ -487,9 +487,9 @@ static void piano_roll_render(struct piano_roll* piano_roll, SDL_Renderer* rende
 		}
 		SDL_Rect rect;
 		rect.x = (int)x-16;
-		rect.y = 16+32;
+		rect.y = 16 + note->drum_id * 48;
 		rect.w = 16;
-		rect.h = 128-64;
+		rect.h = 32;
 		SDL_RenderFillRect(renderer, &rect);
 	}
 }
