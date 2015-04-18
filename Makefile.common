@@ -1,0 +1,17 @@
+all: $(EXE)
+
+a.o: a.c
+	$(CC) $(CFLAGS) -c a.c
+
+m.o: m.c
+	$(CC) $(CFLAGS) -c m.c
+
+dotd.o: dotd.c a.h m.h
+	$(CC) $(CFLAGS) -c dotd.c
+
+$(EXE): dotd.o a.o m.o
+	$(CC) dotd.o a.o m.o -o $(EXE) $(LINK)
+
+clean:
+	rm -rf *.o *.inc.c $(EXE)
+

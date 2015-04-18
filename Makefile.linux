@@ -1,0 +1,9 @@
+PKGS=sdl2
+CC=clang
+#OPT=-Ofast
+OPT=-O0 -ggdb3 # XXX
+CFLAGS=--std=c99 $(OPT) -Wall $(shell pkg-config $(PKGS) --cflags) -DBUILD_LINUX
+LINK=-lm $(shell pkg-config $(PKGS) --libs)
+EXE=dotd
+
+include Makefile.common
