@@ -22,6 +22,10 @@
 #define M_PI (3.141592653589793)
 #endif
 
+// 16:9
+#define SCREEN_WIDTH (384)
+#define SCREEN_HEIGHT (216)
+
 // your random number god
 struct rng {
 	uint32_t z;
@@ -64,43 +68,6 @@ static inline void rng_seed(struct rng* rng, uint32_t seed)
 
 
 
-
-struct stage {
-	int width;
-	int height;
-	int offset_x;
-	int offset_y;
-};
-
-static void stage_update(struct stage* stage, SDL_Window* window)
-{
-	int window_width;
-	int window_height;
-	SDL_GetWindowSize(window, &window_width, &window_height);
-
-	int aspect_major = 16;
-	int aspect_minor = 9;
-	
-	float window_aspect = (float)window_width / (float)window_height;
-	float target_aspect = (float)aspect_major / (float)aspect_minor;
-
-	if (target_aspect > window_aspect) {
-		stage->width = window_width;
-		stage->height = (window_width * aspect_minor) / aspect_major;
-		stage->offset_x = 0;
-		stage->offset_y = (window_height - stage->height) / 2;
-	} else {
-		stage->width = (window_height * aspect_major) / aspect_minor;
-		stage->height = window_height;
-		stage->offset_x = (window_width - stage->width) / 2;
-		stage->offset_y = 0;
-	}
-
-	ASSERT(stage->width > 0);
-	ASSERT(stage->height > 0);
-	ASSERT(stage->offset_x >= 0);
-	ASSERT(stage->offset_y >= 0);
-}
 
 #define ASSET_PATH_MAX_LENGTH (1500)
 static char assets_base[ASSET_PATH_MAX_LENGTH];
@@ -201,11 +168,14 @@ static void drum_samples_init(struct drum_samples* ds)
 #define DRUM_ID_KICK (0)
 #define DRUM_ID_SNARE (1)
 #define DRUM_ID_HIHAT (2)
-#define DRUM_ID_MAX (3)
+#define DRUM_ID_OPEN (3)
+#define DRUM_ID_MAX (4)
 
 #define DRUM_CONTROL_KICK (1<<(DRUM_ID_KICK))
 #define DRUM_CONTROL_SNARE (1<<(DRUM_ID_SNARE))
 #define DRUM_CONTROL_HIHAT (1<<(DRUM_ID_HIHAT))
+#define DRUM_CONTROL_OPEN (1<<(DRUM_ID_OPEN))
+#define DRUM_CONTROL_HEAD (1<<16)
 
 struct drum_control_feedback {
 	uint32_t value;
@@ -406,6 +376,7 @@ static void piano_roll_init(struct piano_roll* p, struct song* song)
 	p->song = song;
 }
 
+#if 0
 static void renderer_set_drum_color(SDL_Renderer* renderer, int drum_id)
 {
 	switch (drum_id) {
@@ -514,6 +485,118 @@ static void piano_roll_render(struct piano_roll* piano_roll, SDL_Renderer* rende
 		SDL_RenderFillRect(renderer, &rect);
 	}
 }
+#endif
+
+
+struct img {
+	uint32_t* data;
+	int width;
+	int height;
+	int bpp;
+};
+
+
+static void img_load(struct img* img, const char* asset)
+{
+	img->data = (uint32_t*)stbi_load(asset_path(asset), &img->width, &img->height, &img->bpp, 4);
+	AN(img->data);
+}
+
+
+static void screen_draw_img(uint32_t* screen, struct img* img, int x0, int y0, int x1, int y1, int w, int h)
+{
+	int i0 = x0 + y0 * img->width;
+	int i1 = x1 + y1 * SCREEN_WIDTH;
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
+			uint32_t s0 = img->data[i0];
+			if ((s0 & 0xffffff) != 0xff00ff) screen[i1] = s0;
+			i0++;
+			i1++;
+		}
+		i0 += img->width - w;
+		i1 += SCREEN_WIDTH - w;
+	}
+}
+
+static void draw_drummer(uint32_t* screen, struct img* img, uint32_t drum_control)
+{
+	//screen_draw_img(screen, img, 0, 0, 0, 0, 100, 100);
+	#if 0
+	// src offset, src dim - draw offset
+	histick 13,96 21x7 - 14,28
+	hihat 4,110 20x7 - 24,33
+	head 2,29 17x21 - 1,0
+	kick 1,1 30x26 - 0,39
+	snare 3,61 34x23 - 3,18
+	static 40,1 26x26 - 27,39
+	#endif
+
+	int x = 64;
+	int y = 64;
+	int actoff = img->height >> 1;
+
+	// histick
+	screen_draw_img(screen, img, 13, 96 + ((drum_control & DRUM_CONTROL_HIHAT) ? actoff : 0), x+14, y+28, 21, 7);
+
+	// hihat
+	screen_draw_img(screen, img, 4, 110 + ((drum_control & DRUM_CONTROL_OPEN) ? actoff : 0), x+24, y+33, 20, 7);
+
+	// head
+	screen_draw_img(screen, img, 2, 29 + ((drum_control & DRUM_CONTROL_HEAD) ? actoff : 0), x+1, y+0, 17, 21);
+
+	// kick
+	screen_draw_img(screen, img, 1, 1 + ((drum_control & DRUM_CONTROL_KICK) ? actoff : 0), x+0, y+39, 30, 26);
+
+	// snare
+	screen_draw_img(screen, img, 3, 61 + ((drum_control & DRUM_CONTROL_SNARE) ? actoff : 0), x+3, y+18, 34, 23);
+
+	// static
+	screen_draw_img(screen, img, 40, 1, x+27, y+39, 26, 26);
+
+}
+
+static void present_screen(SDL_Window* window, SDL_Renderer* renderer, SDL_Texture* texture, uint32_t* screen)
+{
+	//SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+	//SDL_RenderClear(renderer);
+
+	SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(uint32_t));
+
+	int window_width;
+	int window_height;
+	SDL_GetWindowSize(window, &window_width, &window_height);
+
+	float window_aspect = (float)window_width / (float)window_height;
+	float screen_aspect = (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT;
+
+	SDL_Rect rect;
+	rect.x = 0;
+	rect.y = 0;
+	rect.w = SCREEN_WIDTH;
+	rect.h = SCREEN_HEIGHT;
+
+	if (screen_aspect > window_aspect) {
+		rect.w = window_width;
+		rect.h = (window_width * SCREEN_HEIGHT) / SCREEN_WIDTH;
+		rect.x = 0;
+		rect.y = (window_height - rect.h) / 2;
+	} else {
+		rect.w = (window_height * SCREEN_WIDTH) / SCREEN_HEIGHT;
+		rect.h = window_height;
+		rect.x = (window_width - rect.w) / 2;
+		rect.y = 0;
+	}
+
+	ASSERT(rect.w > 0);
+	ASSERT(rect.h > 0);
+	ASSERT(rect.x >= 0);
+	ASSERT(rect.y >= 0);
+
+	SDL_RenderCopy(renderer, texture, NULL, &rect);
+
+	SDL_RenderPresent(renderer);
+}
 
 int main(int argc, char** argv)
 {
@@ -531,11 +614,19 @@ int main(int argc, char** argv)
 		}
 	}
 
+	#if 1
 	SDL_Window* window = SDL_CreateWindow(
 			"Drums of the Dead",
 			SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 			0, 0,
 			SDL_WINDOW_FULLSCREEN_DESKTOP);
+	#else
+	SDL_Window* window = SDL_CreateWindow(
+			"Drums of the Dead",
+			SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+			500, 1000,
+			0);
+	#endif
 	SAN(window);
 
 	SDL_Renderer* renderer = SDL_CreateRenderer(
@@ -545,6 +636,15 @@ int main(int argc, char** argv)
 	SAN(renderer);
 
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_ADD);
+
+
+	SDL_Texture* texture = SDL_CreateTexture(
+			renderer,
+			SDL_PIXELFORMAT_ABGR8888,
+			SDL_TEXTUREACCESS_STREAMING,
+			SCREEN_WIDTH,
+			SCREEN_HEIGHT);
+	SAN(texture);
 
 	struct audio audio;
 	audio_init(&audio);
@@ -565,7 +665,19 @@ int main(int argc, char** argv)
 	drum_control_keymap['.'] = DRUM_CONTROL_HIHAT;
 	drum_control_keymap['/'] = DRUM_CONTROL_HIHAT;
 
-	struct stage stage;
+
+	struct img drummer_img;
+	// drummerp.png PNG 150x240 150x240+0+0 8-bit sRGB 26c 1.77KB 0.000u 0:00.000
+	img_load(&drummer_img, "drummerp.png");
+	ASSERT(drummer_img.width == 150);
+	ASSERT(drummer_img.height == 240);
+
+	int drum_control_cooldown[DRUM_ID_MAX] = {0};
+	int drum_control_cooldown_duration = 4; // FIXME set from framerate
+
+
+	uint32_t* screen = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
+	AN(screen);
 
 	int exiting = 0;
 	while (!exiting) {
@@ -602,15 +714,32 @@ int main(int argc, char** argv)
 		}
 		audio_unlock(&audio);
 
-		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-		SDL_RenderClear(renderer);
 
-		stage_update(&stage, window);
+		memset(screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
 
 		piano_roll_update_position(&piano_roll, &audio, audio_position);
+		#if 0
 		piano_roll_render(&piano_roll, renderer, &stage);
+		#endif
 
-		SDL_RenderPresent(renderer);
+		uint32_t cool_drum_control = 0;
+		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
+			int mask = 1<<drum_id;
+			if (drum_control & mask) {
+				drum_control_cooldown[drum_id] = drum_control_cooldown_duration;
+			}
+			if (drum_control_cooldown[drum_id] > 0) {
+				cool_drum_control |= mask;
+				drum_control_cooldown[drum_id]--;
+			}
+		}
+		if (((int)(audio_position_to_seconds(&audio, audio_position) * 2))&1) {
+			// FIXME set from bpm
+			cool_drum_control |= DRUM_CONTROL_HEAD;
+		}
+		draw_drummer(screen, &drummer_img, cool_drum_control);
+
+		present_screen(window, renderer, texture, screen);
 	}
 
 	audio_quit(&audio);
