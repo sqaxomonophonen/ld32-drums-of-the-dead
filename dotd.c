@@ -349,6 +349,11 @@ static void audio_quit(struct audio* audio)
 	SDL_CloseAudioDevice(audio->device);
 }
 
+static float audio_position_to_seconds(struct audio* audio, uint32_t position)
+{
+	return (float)position / (float)audio->sample_rate;
+}
+
 
 //#define PIANO_ROLL_WIDTH_IN_BEATS (10.0)
 
@@ -356,8 +361,8 @@ static void audio_quit(struct audio* audio)
 #define MAX_PLAYED_NOTES (256)
 
 struct played_note {
+	float time_in_seconds;
 	uint32_t drum_id;
-	float time;
 };
 
 struct piano_roll {
@@ -370,7 +375,29 @@ struct piano_roll {
 
 static void piano_roll_update_position(struct piano_roll* p, struct audio* audio, uint32_t audio_position)
 {
-	p->time_in_seconds = (float)audio_position / (float)audio->sample_rate;
+	p->time_in_seconds = audio_position_to_seconds(audio, audio_position);
+}
+
+static void piano_roll_register_drum_control_feedback(struct piano_roll* p, struct audio* audio, struct drum_control_feedback* fb)
+{
+	for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
+		int drum_id_mask = 1<<drum_id;
+		if (!(fb->value & drum_id_mask)) continue;
+		float earliest_time = 0;
+		int earliest_time_idx = -1;
+		for (int j = 0; j < MAX_PLAYED_NOTES; j++) {
+			struct played_note* note = &p->played_notes[j];
+			if (earliest_time_idx == -1 || note->time_in_seconds < earliest_time) {
+				earliest_time_idx = j;
+				earliest_time = note->time_in_seconds;
+			}
+		}
+		ASSERT(earliest_time_idx != -1);
+		ASSERT(earliest_time_idx < MAX_PLAYED_NOTES);
+		struct played_note* note = &p->played_notes[earliest_time_idx];
+		note->drum_id = drum_id;
+		note->time_in_seconds = audio_position_to_seconds(audio, fb->position);
+	}
 }
 
 static void piano_roll_init(struct piano_roll* p)
@@ -380,24 +407,26 @@ static void piano_roll_init(struct piano_roll* p)
 	p->time_signature = 4; // 4/4 FIXME get from song
 }
 
-static void piano_roll_render(struct piano_roll* p, SDL_Renderer* renderer, struct stage* stage)
+static void piano_roll_render(struct piano_roll* piano_roll, SDL_Renderer* renderer, struct stage* stage)
 {
 	float width_in_seconds = 5.0f;
 	float offset_in_seconds = 1.5f;
 
-	float bps = p->bpm / 60.0;
+	float bps = piano_roll->bpm / 60.0;
 
 	float width_in_beats = width_in_seconds * bps;
 	float offset_in_beats = offset_in_seconds * bps;
 
-	float current_beat = p->time_in_seconds * bps;
+	float current_beat = piano_roll->time_in_seconds * bps;
 
 	int b0 = (int)floorf(current_beat - offset_in_beats);
 	int b1 = b0 + (int)ceilf(width_in_beats) + 1;
 
 	float x0 = (stage->width * offset_in_seconds) / width_in_seconds;
 	float beat_width = stage->width / width_in_beats;
+	float second_width = (float)stage->width / width_in_seconds;
 
+	// render cursor
 	{
 		SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
 		SDL_Rect rect;
@@ -408,12 +437,13 @@ static void piano_roll_render(struct piano_roll* p, SDL_Renderer* renderer, stru
 		SDL_RenderFillRect(renderer, &rect);
 	}
 
+	// render bars
 	for (int b = b0; b <= b1; b++) {
 		for (int sub = 0; sub < 4; sub++) {
 			float bf = (float)b + (float)sub * 0.25f;
 
 			if (sub == 0) {
-				if ((b % p->time_signature) == 0) {
+				if ((b % piano_roll->time_signature) == 0) {
 					SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 				} else {
 					SDL_SetRenderDrawColor(renderer, 200, 200, 0, 255);
@@ -432,6 +462,31 @@ static void piano_roll_render(struct piano_roll* p, SDL_Renderer* renderer, stru
 			rect.h = 128;
 			SDL_RenderFillRect(renderer, &rect);
 		}
+	}
+
+	// render notes
+	for (int i = 0; i < MAX_PLAYED_NOTES; i++) {
+		struct played_note* note = &piano_roll->played_notes[i];
+		if (note->time_in_seconds <= 0.0) continue;
+		float dt = note->time_in_seconds - piano_roll->time_in_seconds;
+		float x = x0 + dt * second_width;
+		switch (note->drum_id) {
+			case 0:
+				SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+				break;
+			case 1:
+				SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+				break;
+			case 2:
+				SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+				break;
+		}
+		SDL_Rect rect;
+		rect.x = (int)x-16;
+		rect.y = 16+32;
+		rect.w = 16;
+		rect.h = 128-64;
+		SDL_RenderFillRect(renderer, &rect);
 	}
 }
 
@@ -513,8 +568,7 @@ int main(int argc, char** argv)
 			while (feedback_cursor != audio.drum_control_feedback_cursor) {
 				struct drum_control_feedback* fb = &audio.drum_control_feedback[feedback_cursor];
 				if (fb->value) {
-					//printf("%d at %d)\n", fb->value, fb->position);
-					// TODO
+					piano_roll_register_drum_control_feedback(&piano_roll, &audio, fb);
 				}
 				feedback_cursor = (feedback_cursor + 1) & DRUM_CONTROL_FEEDBACK_MASK;
 			}
