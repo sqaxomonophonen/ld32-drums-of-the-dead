@@ -458,9 +458,9 @@ static void screen_draw_img(uint32_t* screen, struct img* img, int x0, int y0, i
 static uint32_t drum_color(drum_id)
 {
 	switch (drum_id) {
-		case DRUM_ID_KICK: return mkcol(255,0,0);
-		case DRUM_ID_SNARE: return mkcol(0,255,0);
-		case DRUM_ID_HIHAT: return mkcol(0,0,255);
+		case DRUM_ID_KICK: return mkcol(179,29,5);
+		case DRUM_ID_SNARE: return mkcol(255,191,37);
+		case DRUM_ID_HIHAT: return mkcol(85,195,235);
 		case DRUM_ID_OPEN: return mkcol(255,255,255);
 		default: return 0;
 	}
