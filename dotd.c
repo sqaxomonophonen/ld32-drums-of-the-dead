@@ -1,11 +1,11 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <math.h>
 
 #include "platform.h"
 
 #include "a.h"
-#include "m.h"
 
 // SONGS
 #include "song.h"

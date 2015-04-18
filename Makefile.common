@@ -5,17 +5,14 @@ XX=./xrns-export.sh
 a.o: a.c
 	$(CC) $(CFLAGS) -c a.c
 
-m.o: m.c
-	$(CC) $(CFLAGS) -c m.c
-
 test.xrns.inc.c: workbench/test.xrns
 	$(XX) workbench/test.xrns > test.xrns.inc.c
 
-dotd.o: dotd.c a.h m.h test.xrns.inc.c
+dotd.o: dotd.c a.h test.xrns.inc.c
 	$(CC) $(CFLAGS) -c dotd.c
 
-$(EXE): dotd.o a.o m.o
-	$(CC) dotd.o a.o m.o -o $(EXE) $(LINK)
+$(EXE): dotd.o a.o
+	$(CC) dotd.o a.o -o $(EXE) $(LINK)
 
 clean:
 	rm -rf *.o *.inc.c $(EXE)
