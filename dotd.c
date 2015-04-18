@@ -340,12 +340,53 @@ struct piano_roll {
 	float time_in_seconds;
 	struct played_note played_notes[MAX_PLAYED_NOTES];
 	struct song* song;
+	float gauge;
 };
 
+static void piano_roll_init(struct piano_roll* p, struct song* song)
+{
+	memset(p, 0, sizeof(*p));
+	p->song = song;
+	p->gauge = 1.0f;
+}
 
 static void piano_roll_update_position(struct piano_roll* p, struct audio* audio, uint32_t audio_position)
 {
 	p->time_in_seconds = audio_position_to_seconds(audio, audio_position);
+}
+
+static void piano_roll_update_gauge(struct piano_roll* p)
+{
+	//p->gauge -= 0.001f;
+}
+
+static void piano_roll_gauge_play(struct piano_roll* p, struct played_note* note)
+{
+	p->gauge -= 0.01f; // penalty for playing; to prevent spamming abuse
+
+	float note_step = (note->time_in_seconds * (float)p->song->bpm * (float)p->song->lpb) / 60.0;
+	float range = p->song->lpb;
+	int step_min = (int)floorf(note_step - range);
+	int step_max = (int)ceilf(note_step + range);
+
+	int match = 0;
+	float dstep_min = 0;
+	for (int step = step_min; step <= step_max; step++) {
+		if (step < 0 || step >= p->song->length) continue;
+		int d = p->song->drums[step];
+		if ((d & (1<<note->drum_id)) == 0) continue;
+		float dstep = fabsf(note_step - (float)step);
+		if (!match || dstep < dstep_min) {
+			match = 1;
+			dstep_min = dstep;
+		}
+	}
+
+	float dpenalty = match ? (dstep_min / (float)p->song->lpb) : 1.0f;
+	if (dpenalty > 1.0f) dpenalty = 1.0f;
+
+	float good_threshold = 0.25f;
+	p->gauge -= ((dpenalty * dpenalty) - (good_threshold * good_threshold)) * 0.1f;
 }
 
 static void piano_roll_register_drum_control_feedback(struct piano_roll* p, struct audio* audio, struct drum_control_feedback* fb)
@@ -367,13 +408,8 @@ static void piano_roll_register_drum_control_feedback(struct piano_roll* p, stru
 		struct played_note* note = &p->played_notes[earliest_time_idx];
 		note->drum_id = drum_id;
 		note->time_in_seconds = audio_position_to_seconds(audio, fb->position);
+		piano_roll_gauge_play(p, note);
 	}
-}
-
-static void piano_roll_init(struct piano_roll* p, struct song* song)
-{
-	memset(p, 0, sizeof(*p));
-	p->song = song;
 }
 
 static uint32_t mkcol(int r, int g, int b)
@@ -510,10 +546,10 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 	}
 
 	// render song
-	int s0 = (int)floorf((current_beat - offset_in_beats) * piano_roll->song->lps);
-	int s1 = s0 + (int)ceil(width_in_beats * piano_roll->song->lps)+1;
-	float step_width = (SCREEN_WIDTH / width_in_beats) / piano_roll->song->lps;
-	float current_step = current_beat * piano_roll->song->lps;
+	int s0 = (int)floorf((current_beat - offset_in_beats) * piano_roll->song->lpb);
+	int s1 = s0 + (int)ceil(width_in_beats * piano_roll->song->lpb)+1;
+	float step_width = (SCREEN_WIDTH / width_in_beats) / piano_roll->song->lpb;
+	float current_step = current_beat * piano_roll->song->lpb;
 	for (int s = s0; s <= s1; s++) {
 		if (s < 0 || s >= piano_roll->song->length) continue;
 		float x = x0 + ((float)s - current_step) * step_width;
@@ -535,6 +571,14 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		float dt = note->time_in_seconds - piano_roll->time_in_seconds;
 		float x = x0 + dt * second_width;
 		screen_draw_rect(screen, (int)x-2, 16+note->drum_id*8+2, 5, 4, drum_color(note->drum_id));
+	}
+
+	// render gauge
+	{
+		int dx = piano_roll->gauge * SCREEN_WIDTH;
+		if (dx < 0) dx = 0;
+		if (dx >= SCREEN_WIDTH) dx = SCREEN_WIDTH;
+		screen_draw_rect(screen, 0, 200, dx, 8, mkcol(0,255,0));
 	}
 }
 
@@ -761,6 +805,7 @@ int main(int argc, char** argv)
 		draw_drummer(screen, &drummer_img, cool_drum_control);
 
 		piano_roll_update_position(&piano_roll, &audio, audio_position);
+		piano_roll_update_gauge(&piano_roll);
 		piano_roll_render(&piano_roll, screen);
 
 		present_screen(window, renderer, texture, screen);

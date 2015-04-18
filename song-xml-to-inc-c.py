@@ -9,7 +9,7 @@ tree = et.fromstring(sys.stdin.read())
 
 song_data = tree.find('GlobalSongData')
 bpm = int(song_data.find('BeatsPerMin').text)
-lps = int(song_data.find('LinesPerBeat').text)
+lpb = int(song_data.find('LinesPerBeat').text)
 time_signature = int(song_data.find('SignatureNumerator').text) # XXX always 4
 
 sequence = tree.find('PatternSequence').find('SequenceEntries')
@@ -35,7 +35,7 @@ for e in sequence:
 
 print "static struct song song_data_%s = {" % name
 print "\t%d," % bpm
-print "\t%d," % lps
+print "\t%d," % lpb
 print "\t%d," % time_signature
 print "\t%d," % len(dctls)
 print "\t{%s}" % ",".join(map(str, dctls))

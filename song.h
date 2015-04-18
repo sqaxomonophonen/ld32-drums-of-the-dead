@@ -2,7 +2,7 @@
 
 struct song {
 	int bpm;
-	int lps;
+	int lpb;
 	int time_signature;
 	int length;
 	int drums[];
