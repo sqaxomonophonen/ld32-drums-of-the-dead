@@ -96,7 +96,10 @@ static char* asset_path(const char* asset)
 #define DS_H0 (6)
 #define DS_H1 (7)
 #define DS_H2 (8)
-#define DS_MAX (9)
+#define DS_O0 (9)
+#define DS_O1 (10)
+#define DS_O2 (11)
+#define DS_MAX (12)
 
 struct sample { // always stereo
 	float* data;
@@ -153,6 +156,9 @@ static void drum_samples_init(struct drum_samples* ds)
 		{DS_H0, "h0.wav"},
 		{DS_H1, "h1.wav"},
 		{DS_H2, "h2.wav"},
+		{DS_O0, "o0.wav"},
+		{DS_O1, "o1.wav"},
+		{DS_O2, "o2.wav"},
 		{-1, NULL}
 	};
 
@@ -231,14 +237,19 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 	audio_unlock(audio);
 
 	// trigger drums
-	for (int i = 0; i < DRUM_ID_MAX; i++) {
-		int m = 1<<i;
+	for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
+		int m = 1<<drum_id;
 		if (drum_control & m) {
-			struct sample_ctx* ctx = &audio->drum_sample_ctx[i];
-			int di = i*3 + rng_uint32(&audio->rng) % 3;
+			struct sample_ctx* ctx = &audio->drum_sample_ctx[drum_id];
+			int di = drum_id*3 + rng_uint32(&audio->rng) % 3;
 			ctx->sample = &audio->drum_samples.samples[di];
 			ctx->position = 0;
 			ctx->playing = 1;
+
+			// open/close hihack
+			if (drum_id == DRUM_ID_HIHAT) {
+				audio->drum_sample_ctx[DRUM_ID_OPEN].playing = 0;
+			}
 		}
 	}
 
@@ -662,8 +673,9 @@ int main(int argc, char** argv)
 	drum_control_keymap['x'] = DRUM_CONTROL_KICK;
 	drum_control_keymap['c'] = DRUM_CONTROL_SNARE;
 	drum_control_keymap['v'] = DRUM_CONTROL_SNARE;
+	drum_control_keymap[','] = DRUM_CONTROL_HIHAT;
 	drum_control_keymap['.'] = DRUM_CONTROL_HIHAT;
-	drum_control_keymap['/'] = DRUM_CONTROL_HIHAT;
+	drum_control_keymap['/'] = DRUM_CONTROL_OPEN;
 
 
 	struct img drummer_img;
