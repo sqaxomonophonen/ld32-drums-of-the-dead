@@ -522,18 +522,19 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
 			int mask = 1<<drum_id;
 			if (!(dctl & mask)) continue;
-			screen_draw_rect(screen, (int)x, 16+drum_id*8, 4, 8, drum_color(drum_id));
+			screen_draw_rect(screen, (int)x-1, 16+drum_id*8, 3, 2, drum_color(drum_id));
+			screen_draw_rect(screen, (int)x-1, 16+drum_id*8+6, 3, 2, drum_color(drum_id));
 		}
 	}
 
-	// render notes
+	// render played notes
 	float second_width = (float)SCREEN_WIDTH / width_in_seconds;
 	for (int i = 0; i < MAX_PLAYED_NOTES; i++) {
 		struct played_note* note = &piano_roll->played_notes[i];
 		if (note->time_in_seconds <= 0.0) continue;
 		float dt = note->time_in_seconds - piano_roll->time_in_seconds;
 		float x = x0 + dt * second_width;
-		screen_draw_rect(screen, (int)x, 16+note->drum_id*8, 4, 8, drum_color(note->drum_id));
+		screen_draw_rect(screen, (int)x-2, 16+note->drum_id*8+2, 5, 4, drum_color(note->drum_id));
 	}
 }
 
