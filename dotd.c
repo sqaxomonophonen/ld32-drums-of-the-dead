@@ -87,19 +87,8 @@ static char* asset_path(const char* asset)
 }
 
 
-#define DS_K0 (0)
-#define DS_K1 (1)
-#define DS_K2 (2)
-#define DS_S0 (3)
-#define DS_S1 (4)
-#define DS_S2 (5)
-#define DS_H0 (6)
-#define DS_H1 (7)
-#define DS_H2 (8)
-#define DS_O0 (9)
-#define DS_O1 (10)
-#define DS_O2 (11)
-#define DS_MAX (12)
+
+
 
 struct sample { // always stereo
 	float* data;
@@ -137,36 +126,36 @@ static void sample_load(struct sample* sample, const char* asset)
 }
 
 struct drum_samples {
-	struct sample samples[DS_MAX];
+	struct sample samples[4*3];
 };
 
 
 static void drum_samples_init(struct drum_samples* ds)
 {
-	struct alist {
-		int i;
-		const char* file;
-	} alist[] = {
-		{DS_K0, "k0.wav"},
-		{DS_K1, "k1.wav"},
-		{DS_K2, "k2.wav"},
-		{DS_S0, "s0.wav"},
-		{DS_S1, "s1.wav"},
-		{DS_S2, "s2.wav"},
-		{DS_H0, "h0.wav"},
-		{DS_H1, "h1.wav"},
-		{DS_H2, "h2.wav"},
-		{DS_O0, "o0.wav"},
-		{DS_O1, "o1.wav"},
-		{DS_O2, "o2.wav"},
-		{-1, NULL}
+	const char* files[] = {
+		"k0.wav",
+		"k1.wav",
+		"k2.wav",
+		"s0.wav",
+		"s1.wav",
+		"s2.wav",
+		"h0.wav",
+		"h1.wav",
+		"h2.wav",
+		"o0.wav",
+		"o1.wav",
+		"o2.wav",
+		NULL
 	};
 
-	struct alist* ae = alist;
-	while (ae->file) {
-		struct sample* sample = &ds->samples[ae->i];
-		sample_load(sample, ae->file);
-		ae++;
+	const char** file = files;
+
+	int i = 0;
+	while (*file) {
+		struct sample* sample = &ds->samples[i];
+		sample_load(sample, *file);
+		file++;
+		i++;
 	}
 }
 
@@ -387,117 +376,53 @@ static void piano_roll_init(struct piano_roll* p, struct song* song)
 	p->song = song;
 }
 
-#if 0
-static void renderer_set_drum_color(SDL_Renderer* renderer, int drum_id)
+static uint32_t mkcol(int r, int g, int b)
 {
-	switch (drum_id) {
-		case 0:
-			SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-			break;
-		case 1:
-			SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-			break;
-		case 2:
-			SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-			break;
-	}
+	return (r&255) + ((g&255)<<8) + ((b&255)<<16);
 }
 
-static void piano_roll_render(struct piano_roll* piano_roll, SDL_Renderer* renderer, struct stage* stage)
+static int screen_clip_rect(int* x0, int* y0, int* w, int* h, int* dx, int* dy)
 {
-	float width_in_seconds = 5.0f;
-	float offset_in_seconds = 1.5f;
+	AN(x0);
+	AN(y0);
+	AN(w);
+	AN(h);
 
-	float bps = piano_roll->song->bpm / 60.0;
+	if (*x0 >= SCREEN_WIDTH) return 0;
+	if (*y0 >= SCREEN_HEIGHT) return 0;
 
-	float width_in_beats = width_in_seconds * bps;
-	float offset_in_beats = offset_in_seconds * bps;
-
-	float current_beat = piano_roll->time_in_seconds * bps;
-
-	float x0 = (stage->width * offset_in_seconds) / width_in_seconds;
-
-	// render cursor
-	{
-		SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
-		SDL_Rect rect;
-		rect.x = (int)x0-1;
-		rect.y = 0;
-		rect.w = 4;
-		rect.h = 128+32;
-		SDL_RenderFillRect(renderer, &rect);
+	if (*x0 < 0) {
+		*w += *x0;
+		if (dx) *dx -= *x0;
+		*x0 = 0;
 	}
 
-	// render bars
-	int b0 = (int)floorf(current_beat - offset_in_beats);
-	int b1 = b0 + (int)ceilf(width_in_beats) + 1;
-	float beat_width = stage->width / width_in_beats;
-	for (int b = b0; b <= b1; b++) {
-		for (int sub = 0; sub < 4; sub++) {
-			float bf = (float)b + (float)sub * 0.25f;
+	if (*y0 < 0) {
+		*h += *y0;
+		if (dy) *dy -= *y0;
+		*y0 = 0;
+	}
 
-			if (sub == 0) {
-				if ((b % piano_roll->song->time_signature) == 0) {
-					SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-				} else {
-					SDL_SetRenderDrawColor(renderer, 200, 200, 0, 255);
-				}
-			} else {
-				SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
-			}
+	if (*x0 + *w >= SCREEN_WIDTH) *w -= *x0 + *w - SCREEN_WIDTH;
+	if (*y0 + *h >= SCREEN_HEIGHT) *h -= *y0 + *h - SCREEN_HEIGHT;
 
-			float x = x0 + (bf - current_beat) * beat_width;
+	if (*w <= 0 || *h <= 0) return 0;
 
-			SDL_Rect rect;
-			rect.x = (int)x;
-			rect.y = 16;
-			rect.w = 2;
-			rect.h = 128;
-			SDL_RenderFillRect(renderer, &rect);
+	return 1;
+}
+
+static void screen_draw_rect(uint32_t* screen, int x0, int y0, int w, int h, uint32_t color)
+{
+	if (!screen_clip_rect(&x0, &y0, &w, &h, NULL, NULL)) return;
+	
+	int i = x0 + y0 * SCREEN_WIDTH;
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
+			screen[i++] = color;
 		}
-	}
-
-	// render song
-	int s0 = (int)floorf((current_beat - offset_in_beats) * piano_roll->song->lps);
-	int s1 = s0 + (int)ceil(width_in_beats * piano_roll->song->lps)+1;
-	float step_width = (stage->width / width_in_beats) / piano_roll->song->lps;
-	float current_step = current_beat * piano_roll->song->lps;
-	for (int s = s0; s <= s1; s++) {
-		if (s < 0 || s >= piano_roll->song->length) continue;
-		float x = x0 + ((float)s - current_step) * step_width;
-		int dctl = piano_roll->song->drums[s];
-
-		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
-			int mask = 1<<drum_id;
-			if (!(dctl & mask)) continue;
-			renderer_set_drum_color(renderer, drum_id);
-			SDL_Rect rect;
-			rect.x = (int)x-8;
-			rect.y = 24 + drum_id * 48;
-			rect.w = 8;
-			rect.h = 16;
-			SDL_RenderFillRect(renderer, &rect);
-		}
-	}
-
-	// render notes
-	float second_width = (float)stage->width / width_in_seconds;
-	for (int i = 0; i < MAX_PLAYED_NOTES; i++) {
-		struct played_note* note = &piano_roll->played_notes[i];
-		if (note->time_in_seconds <= 0.0) continue;
-		float dt = note->time_in_seconds - piano_roll->time_in_seconds;
-		float x = x0 + dt * second_width;
-		renderer_set_drum_color(renderer, note->drum_id);
-		SDL_Rect rect;
-		rect.x = (int)x-16;
-		rect.y = 16 + note->drum_id * 48;
-		rect.w = 16;
-		rect.h = 32;
-		SDL_RenderFillRect(renderer, &rect);
+		i += SCREEN_WIDTH - w;
 	}
 }
-#endif
-
 
 struct img {
 	uint32_t* data;
@@ -529,6 +454,89 @@ static void screen_draw_img(uint32_t* screen, struct img* img, int x0, int y0, i
 		i1 += SCREEN_WIDTH - w;
 	}
 }
+
+static uint32_t drum_color(drum_id)
+{
+	switch (drum_id) {
+		case DRUM_ID_KICK: return mkcol(255,0,0);
+		case DRUM_ID_SNARE: return mkcol(0,255,0);
+		case DRUM_ID_HIHAT: return mkcol(0,0,255);
+		case DRUM_ID_OPEN: return mkcol(255,255,255);
+		default: return 0;
+	}
+}
+
+
+static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
+{
+	float width_in_seconds = 5.0f;
+	float offset_in_seconds = 1.5f;
+
+	float bps = piano_roll->song->bpm / 60.0;
+
+	float width_in_beats = width_in_seconds * bps;
+	float offset_in_beats = offset_in_seconds * bps;
+
+	float current_beat = piano_roll->time_in_seconds * bps;
+
+	float x0 = (SCREEN_WIDTH * offset_in_seconds) / width_in_seconds;
+
+	// render cursor
+	{
+		screen_draw_rect(screen, (int)x0-1, 8, 3, 48, mkcol(80,80,80));
+	}
+
+	// render bars
+	int b0 = (int)floorf(current_beat - offset_in_beats);
+	int b1 = b0 + (int)ceilf(width_in_beats) + 1;
+	float beat_width = SCREEN_WIDTH / width_in_beats;
+	for (int b = b0; b <= b1; b++) {
+		for (int sub = 0; sub < 4; sub++) {
+			float bf = (float)b + (float)sub * 0.25f;
+
+			uint32_t color = 0;
+			if (sub == 0) {
+				if ((b % piano_roll->song->time_signature) == 0) {
+					color = mkcol(255,255,255);
+				} else {
+					color = mkcol(200,200,0);
+				}
+			} else {
+				color = mkcol(80,80,80);
+			}
+			float x = x0 + (bf - current_beat) * beat_width;
+			screen_draw_rect(screen, (int)x, 16, 1, 32, color);
+		}
+	}
+
+	// render song
+	int s0 = (int)floorf((current_beat - offset_in_beats) * piano_roll->song->lps);
+	int s1 = s0 + (int)ceil(width_in_beats * piano_roll->song->lps)+1;
+	float step_width = (SCREEN_WIDTH / width_in_beats) / piano_roll->song->lps;
+	float current_step = current_beat * piano_roll->song->lps;
+	for (int s = s0; s <= s1; s++) {
+		if (s < 0 || s >= piano_roll->song->length) continue;
+		float x = x0 + ((float)s - current_step) * step_width;
+		int dctl = piano_roll->song->drums[s];
+
+		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
+			int mask = 1<<drum_id;
+			if (!(dctl & mask)) continue;
+			screen_draw_rect(screen, (int)x, 16+drum_id*8, 4, 8, drum_color(drum_id));
+		}
+	}
+
+	// render notes
+	float second_width = (float)SCREEN_WIDTH / width_in_seconds;
+	for (int i = 0; i < MAX_PLAYED_NOTES; i++) {
+		struct played_note* note = &piano_roll->played_notes[i];
+		if (note->time_in_seconds <= 0.0) continue;
+		float dt = note->time_in_seconds - piano_roll->time_in_seconds;
+		float x = x0 + dt * second_width;
+		screen_draw_rect(screen, (int)x, 16+note->drum_id*8, 4, 8, drum_color(note->drum_id));
+	}
+}
+
 
 static void draw_drummer(uint32_t* screen, struct img* img, uint32_t drum_control)
 {
@@ -730,10 +738,6 @@ int main(int argc, char** argv)
 
 		memset(screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
 
-		piano_roll_update_position(&piano_roll, &audio, audio_position);
-		#if 0
-		piano_roll_render(&piano_roll, renderer, &stage);
-		#endif
 
 		uint32_t cool_drum_control = 0;
 		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
@@ -754,6 +758,9 @@ int main(int argc, char** argv)
 			cool_drum_control |= DRUM_CONTROL_HEAD;
 		}
 		draw_drummer(screen, &drummer_img, cool_drum_control);
+
+		piano_roll_update_position(&piano_roll, &audio, audio_position);
+		piano_roll_render(&piano_roll, screen);
 
 		present_screen(window, renderer, texture, screen);
 	}
