@@ -8,13 +8,13 @@ a.o: a.c
 m.o: m.c
 	$(CC) $(CFLAGS) -c m.c
 
-dotd.o: dotd.c a.h m.h
-	$(CC) $(CFLAGS) -c dotd.c
-
 test.xrns.inc.c: test.xrns
 	$(XX) test.xrns > test.xrns.inc.c
 
-$(EXE): dotd.o a.o m.o test.xrns.inc.c
+dotd.o: dotd.c a.h m.h test.xrns.inc.c
+	$(CC) $(CFLAGS) -c dotd.c
+
+$(EXE): dotd.o a.o m.o
 	$(CC) dotd.o a.o m.o -o $(EXE) $(LINK)
 
 clean:
