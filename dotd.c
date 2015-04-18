@@ -640,6 +640,9 @@ int main(int argc, char** argv)
 	#endif
 	SAN(window);
 
+	SDL_DisplayMode mode;
+	SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(window), &mode);
+
 	SDL_Renderer* renderer = SDL_CreateRenderer(
 			window,
 			-1, 
@@ -685,8 +688,6 @@ int main(int argc, char** argv)
 	ASSERT(drummer_img.height == 240);
 
 	int drum_control_cooldown[DRUM_ID_MAX] = {0};
-	int drum_control_cooldown_duration = 4; // FIXME set from framerate
-
 
 	uint32_t* screen = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
 	AN(screen);
@@ -738,7 +739,10 @@ int main(int argc, char** argv)
 		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
 			int mask = 1<<drum_id;
 			if (drum_control & mask) {
-				drum_control_cooldown[drum_id] = drum_control_cooldown_duration;
+				int cooldown = drum_id == DRUM_ID_OPEN ? mode.refresh_rate * 2: mode.refresh_rate / 10;
+				drum_control_cooldown[drum_id] = cooldown;
+				// open/close hihack
+				if (drum_id == DRUM_ID_HIHAT) drum_control_cooldown[DRUM_ID_OPEN] = 0;
 			}
 			if (drum_control_cooldown[drum_id] > 0) {
 				cool_drum_control |= mask;
