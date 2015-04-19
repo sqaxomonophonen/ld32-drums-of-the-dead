@@ -1542,6 +1542,11 @@ int main(int argc, char** argv)
 
 	int drum_control_cooldown[DRUM_ID_MAX] = {0};
 
+	struct img menu_img;
+	img_load(&menu_img, "menu.png");
+	ASSERT(menu_img.width == SCREEN_WIDTH);
+	ASSERT(menu_img.height == SCREEN_HEIGHT);
+
 	uint32_t* screen = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
 	AN(screen);
 
@@ -1614,14 +1619,13 @@ int main(int argc, char** argv)
 			}
 
 
-
-			memset(screen, 0, sizeof(uint32_t) * SCREEN_WIDTH * SCREEN_HEIGHT);
+			memcpy(screen, menu_img.data, sizeof(uint32_t) * SCREEN_WIDTH * SCREEN_HEIGHT);
 
 			uint32_t select_color = mkcol(255,255,255);
 			uint32_t unselect_color = mkcol(128,128,128);
 
 			font_set_color(&font, menu_selection == 0 ? select_color : unselect_color);
-			font_set_cursor(&font, 150, 50);
+			font_set_cursor(&font, 120, 100);
 			font_printf(&font, screen, "start game\n");
 
 			const char* drum_names[] = {
