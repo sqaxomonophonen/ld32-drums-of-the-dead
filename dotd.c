@@ -794,8 +794,8 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 	float tick_time = 0.05f;
 	int spawn_ticks = 12;
 	int zombie_start_x = 270;
-	int zombie_start_y = 72;
-	int zombie_start_y_spread = 45;
+	int zombie_start_y = 75;
+	int zombie_start_y_spread = 30;
 	int zombie_cycle_dx = 60;
 	int zombie_frame_count = 12;
 	int gib_duration = 7;
