@@ -901,6 +901,19 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 	}
 }
 
+static int zombie_director_get_leftmost_x(struct zombie_director* zd)
+{
+	int x = SCREEN_WIDTH;
+	for (int i = 0; i < MAX_ZOMBIES; i++) {
+		struct zombie* z = &zd->zombies[i];
+		if (!z->active) continue;
+		int zx = zombie_effective_x(z);
+		if (zx < x) x = zx;
+	}
+	return x;
+
+}
+
 static int zombie_y_sort(const void* va, const void* vb)
 {
 	const struct zombie* a = va;
@@ -921,15 +934,21 @@ static void zombie_director_render(struct zombie_director* zd, uint32_t* screen)
 }
 
 struct player {
+	// setup
 	struct img img;
 	int width, height;
 	int x, y;
 	int anim_offset;
 	int frames;
+	int kill_dx;
+
+	// state
 	int gib;
+	int dead;
+	float dt_accum;
 };
 
-static void player_init(struct player* player, const char* asset, int width, int height, int x, int y, int anim_offset, int frames)
+static void player_init(struct player* player, const char* asset, int width, int height, int x, int y, int anim_offset, int frames, int kill_dx)
 {
 	memset(player, 0, sizeof(*player));
 	img_load(&player->img, asset);
@@ -941,10 +960,42 @@ static void player_init(struct player* player, const char* asset, int width, int
 	player->y = y;
 	player->anim_offset = anim_offset;
 	player->frames = frames;
+	player->kill_dx = kill_dx;
+}
+
+static int player_effective_x(struct player* player)
+{
+	return player->x + player->kill_dx;
+}
+
+static void player_update(struct player* p, struct zombie_director* zombie_director, float dt)
+{
+	if (p->dead) return;
+
+	p->dt_accum += dt;
+
+	float tick_time = 0.05f;
+	int gib_duration = 7;
+
+	while (p->dt_accum > 0) {
+		if (p->gib) {
+			if (p->gib > gib_duration) {
+				p->dead = 1;
+				return;
+			}
+			p->gib++;
+		}
+		if (!p->gib && zombie_director_get_leftmost_x(zombie_director) < player_effective_x(p)) {
+			p->gib++;
+		}
+		p->dt_accum -= tick_time;
+	}
 }
 
 static void player_render(struct player* player, uint32_t* screen, int step)
 {
+	if (player->dead) return;
+
 	int frame = (step>>1) % player->frames;
 	int pain = player->gib & 1;
 	screen_draw_img_pain(
@@ -1051,7 +1102,8 @@ int main(int argc, char** argv)
 		88, 400,
 		78, 101,
 		80,
-		5);
+		5,
+		42);
 
 	struct player guitar_player;
 	player_init(
@@ -1060,7 +1112,8 @@ int main(int argc, char** argv)
 		65, 534,
 		120, 96,
 		89,
-		6);
+		6,
+		34);
 
 	struct zombie_director zombie_director;
 	zombie_director_init(&zombie_director);
@@ -1133,7 +1186,11 @@ int main(int argc, char** argv)
 		piano_roll_update_position(&piano_roll, &audio, audio_position);
 		piano_roll_update_gauge(&piano_roll);
 
-		zombie_director_update(&zombie_director, &piano_roll, 1.0f / (float)mode.refresh_rate);
+		float dt = 1.0f / (float)mode.refresh_rate;
+
+		zombie_director_update(&zombie_director, &piano_roll, dt);
+		player_update(&bass_player, &zombie_director, dt);
+		player_update(&guitar_player, &zombie_director, dt);
 
 		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
 		draw_drummer(screen, &drummer_img, cool_drum_control);
