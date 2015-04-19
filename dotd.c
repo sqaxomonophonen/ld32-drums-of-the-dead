@@ -47,7 +47,6 @@ static inline uint32_t rng_uint32(struct rng* rng)
 	return (rng->z<<16) + rng->w;
 }
 
-#if 0
 static inline float rng_float(struct rng* rng)
 {
 	union {
@@ -58,7 +57,6 @@ static inline float rng_float(struct rng* rng)
 	magick.i = (r & 0x007fffff) | (127 << 23);
 	return magick.f - 1;
 }
-#endif
 
 static inline void rng_seed(struct rng* rng, uint32_t seed)
 {
@@ -445,7 +443,7 @@ static uint32_t mkcol(int r, int g, int b)
 	return (r&255) + ((g&255)<<8) + ((b&255)<<16);
 }
 
-static int screen_clip_rect(int* x0, int* y0, int* w, int* h, int* dx, int* dy)
+static int screen_clip_rect(int* x0, int* y0, int* w, int* h, int* xmod, int* ymod)
 {
 	AN(x0);
 	AN(y0);
@@ -457,13 +455,13 @@ static int screen_clip_rect(int* x0, int* y0, int* w, int* h, int* dx, int* dy)
 
 	if (*x0 < 0) {
 		*w += *x0;
-		if (dx) *dx -= *x0;
+		if (xmod) *xmod -= *x0;
 		*x0 = 0;
 	}
 
 	if (*y0 < 0) {
 		*h += *y0;
-		if (dy) *dy -= *y0;
+		if (ymod) *ymod -= *y0;
 		*y0 = 0;
 	}
 
@@ -505,6 +503,8 @@ static void img_load(struct img* img, const char* asset)
 
 static void screen_draw_img(uint32_t* screen, struct img* img, int x0, int y0, int x1, int y1, int w, int h)
 {
+	if (!screen_clip_rect(&x1, &y1, &w, &h, &x0, &y0)) return;
+
 	int i0 = x0 + y0 * img->width;
 	int i1 = x1 + y1 * SCREEN_WIDTH;
 	for (int y = 0; y < h; y++) {
@@ -690,6 +690,128 @@ static void present_screen(SDL_Window* window, SDL_Renderer* renderer, SDL_Textu
 	SDL_RenderPresent(renderer);
 }
 
+#define MAX_ZOMBIES (128)
+
+struct zombie {
+	int active;
+	int frame;
+	int style;
+	int x;
+	int y;
+};
+
+struct zombie_director {
+	struct img imgs[10];
+	struct rng rng;
+	float dt_accum;
+	struct zombie zombies[MAX_ZOMBIES];
+	int spawn_counter;
+	int ticks;
+};
+
+
+static void zombie_director_init(struct zombie_director* zd)
+{
+	memset(zd, 0, sizeof*zd);
+
+	const char* zs[] = {
+		"zombiep0.png",
+		"zombiep1.png",
+		"zombiep2.png",
+		"zombiep3.png",
+		"zombiep4.png",
+		"zombiep5.png",
+		"zombiep6.png",
+		"zombiep7.png",
+		"zombiep8.png",
+		"zombiep9.png"
+	};
+
+	for (int i = 0; i < 10; i++) {
+		// zombiep.png PNG 163x984 163x984+0+0 8-bit sRGB 12c 5.74KB 0.000u 0:00.000
+		struct img* img = &zd->imgs[i];
+		img_load(img, zs[i]);
+		ASSERT(img->width == 163);
+		ASSERT(img->height == 984);
+	}
+
+	rng_seed(&zd->rng, 420);
+}
+
+static void zombie_director_update(struct zombie_director* zd, struct piano_roll* piano_roll, float dt)
+{
+	float tick_time = 0.1f;
+	int spawn_ticks = 10;
+	int zombie_start_x = 270;
+	int zombie_start_y = 40;
+	int zombie_cycle_dx = 60;
+	int zombie_frame_count = 12;
+
+	zd->dt_accum += dt;
+
+	float gauge = piano_roll->gauge;
+
+	while (zd->dt_accum > 0) {
+		// handle zombie spawning
+		if (zd->spawn_counter > spawn_ticks) {
+			float rf = rng_float(&zd->rng);
+			if (rf > (gauge * 0.8)) {
+				struct zombie* found = NULL;
+				for (int i = 0; i < MAX_ZOMBIES; i++) {
+					struct zombie* z = &zd->zombies[i];
+					if (!z->active) {
+						found = z;
+						break;
+					}
+				}
+				if (found != NULL) {
+					uint32_t ri = rng_uint32(&zd->rng);
+					found->active = 1;
+					found->frame = 0;
+					found->x = zombie_start_x;
+					found->y = zombie_start_y + (ri&31);
+					found->style = (ri>>5)%10;
+				}
+			}
+
+			zd->spawn_counter = 0;
+		}
+
+		// animate the dead
+		for (int i = 0; i < MAX_ZOMBIES; i++) {
+			struct zombie* z = &zd->zombies[i];
+			if (!z->active) continue;
+			z->frame++;
+			if (z->frame >= zombie_frame_count) {
+				z->x -= zombie_cycle_dx;
+				z->frame = 0;
+			}
+		}
+
+		zd->spawn_counter++;
+		zd->ticks++;
+		zd->dt_accum -= tick_time;
+	}
+}
+
+static int zombie_y_sort(const void* va, const void* vb)
+{
+	const struct zombie* a = va;
+	const struct zombie* b = vb;
+	return a->y - b->y;
+}
+
+static void zombie_director_render(struct zombie_director* zd, uint32_t* screen)
+{
+	qsort(zd->zombies, MAX_ZOMBIES, sizeof(struct zombie), zombie_y_sort);
+	int anim_offset = 82;
+	for (int i = 0; i < MAX_ZOMBIES; i++) {
+		struct zombie* z = &zd->zombies[i];
+		if (!z->active) continue;
+		screen_draw_img(screen, &zd->imgs[z->style], 0, anim_offset * z->frame, z->x, z->y, 163, anim_offset);
+	}
+}
+
 int main(int argc, char** argv)
 {
 	SAZ(SDL_Init(SDL_INIT_EVERYTHING));
@@ -768,6 +890,9 @@ int main(int argc, char** argv)
 	ASSERT(drummer_img.width == 150);
 	ASSERT(drummer_img.height == 240);
 
+	struct zombie_director zombie_director;
+	zombie_director_init(&zombie_director);
+
 	int drum_control_cooldown[DRUM_ID_MAX] = {0};
 
 	uint32_t* screen = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
@@ -830,11 +955,15 @@ int main(int argc, char** argv)
 			// FIXME set from bpm
 			cool_drum_control |= DRUM_CONTROL_HEAD;
 		}
-		draw_drummer(screen, &drummer_img, cool_drum_control);
 
 		piano_roll_update_position(&piano_roll, &audio, audio_position);
 		piano_roll_update_gauge(&piano_roll);
+
+		zombie_director_update(&zombie_director, &piano_roll, 1.0f / (float)mode.refresh_rate);
+
+		draw_drummer(screen, &drummer_img, cool_drum_control);
 		piano_roll_render(&piano_roll, screen);
+		zombie_director_render(&zombie_director, screen);
 
 		present_screen(window, renderer, texture, screen);
 	}
