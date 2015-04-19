@@ -668,6 +668,7 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 			// int width =5;
 			//screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing, 3, 2, drum_color_light(drum_id));
 			//screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing+7, 3, 2, drum_color_light(drum_id));
+			screen_draw_rect(screen, (int)x-2-1, y0+drum_id*spacing+2-1, 7, 7, 0);
 			screen_draw_rect(screen, (int)x-2, y0+drum_id*spacing+2, 5, 5, drum_color_light(drum_id));
 		}
 	}
