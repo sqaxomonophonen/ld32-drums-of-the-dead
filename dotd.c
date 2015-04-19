@@ -638,44 +638,6 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 	}
 }
 
-
-static void draw_drummer(uint32_t* screen, struct img* img, uint32_t drum_control)
-{
-	//screen_draw_img(screen, img, 0, 0, 0, 0, 100, 100);
-	#if 0
-	// src offset, src dim - draw offset
-	histick 13,96 21x7 - 14,28
-	hihat 4,110 20x7 - 24,33
-	head 2,29 17x21 - 1,0
-	kick 1,1 30x26 - 0,39
-	snare 3,61 34x23 - 3,18
-	static 40,1 26x26 - 27,39
-	#endif
-
-	int x = 45;
-	int y = 112;
-	int actoff = img->height >> 1;
-
-	// histick
-	screen_draw_img(screen, img, 13, 96 + ((drum_control & DRUM_CONTROL_HIHAT) ? actoff : 0), x+14, y+28, 21, 7);
-
-	// hihat
-	screen_draw_img(screen, img, 4, 110 + ((drum_control & DRUM_CONTROL_OPEN) ? actoff : 0), x+24, y+33, 20, 7);
-
-	// head
-	screen_draw_img(screen, img, 2, 29 + ((drum_control & DRUM_CONTROL_HEAD) ? actoff : 0), x+1, y+0, 17, 21);
-
-	// kick
-	screen_draw_img(screen, img, 1, 1 + ((drum_control & DRUM_CONTROL_KICK) ? actoff : 0), x+0, y+39, 30, 26);
-
-	// snare
-	screen_draw_img(screen, img, 3, 61 + ((drum_control & DRUM_CONTROL_SNARE) ? actoff : 0), x+3, y+18, 34, 23);
-
-	// static
-	screen_draw_img(screen, img, 40, 1, x+27, y+39, 26, 26);
-
-}
-
 static void present_screen(SDL_Window* window, SDL_Renderer* renderer, SDL_Texture* texture, uint32_t* screen)
 {
 	//SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
@@ -933,6 +895,101 @@ static void zombie_director_render(struct zombie_director* zd, uint32_t* screen)
 	}
 }
 
+struct drummer {
+	struct img img;
+	int drum_control;
+	int x;
+	int y;
+	int kill_dx;
+
+	float dt_accum;
+	int gib;
+	int dead;
+};
+
+static void drummer_init(struct drummer* drummer)
+{
+	memset(drummer, 0, sizeof(*drummer));
+
+	// drummerp.png PNG 150x240 150x240+0+0 8-bit sRGB 26c 1.77KB 0.000u 0:00.000
+	img_load(&drummer->img, "drummerp.png");
+	ASSERT(drummer->img.width == 150);
+	ASSERT(drummer->img.height == 240);
+
+	drummer->x = 45;
+	drummer->y = 112;
+	drummer->kill_dx = 14;
+}
+
+static void drummer_update(struct drummer* drummer, int drum_control, struct zombie_director* zombie_director, float dt)
+{
+	drummer->drum_control = drum_control;
+	if (drummer->dead) return;
+
+	drummer->dt_accum += dt;
+
+	float tick_time = 0.05f;
+	int gib_duration = 10;
+	int drummer_effective_x = drummer->x + drummer->kill_dx;
+
+	while (drummer->dt_accum > 0) {
+		if (drummer->gib) {
+			if (drummer->gib > gib_duration) {
+				drummer->dead = 1;
+				return;
+			}
+			drummer->gib++;
+		}
+		if (!drummer->gib && zombie_director_get_leftmost_x(zombie_director) < drummer_effective_x) {
+			drummer->gib++;
+		}
+		drummer->dt_accum -= tick_time;
+	}
+}
+
+static void drummer_render(struct drummer* drummer, uint32_t* screen)
+{
+	#if 0
+	// src offset, src dim - draw offset
+	histick 13,96 21x7 - 14,28
+	hihat 4,110 20x7 - 24,33
+	head 2,29 17x21 - 1,0
+	kick 1,1 30x26 - 0,39
+	snare 3,61 34x23 - 3,18
+	static 40,1 26x26 - 27,39
+	#endif
+
+	if (drummer->dead) return;
+
+	struct img* img = &drummer->img;
+	int drum_control = drummer->drum_control;
+
+	int x = drummer->x;
+	int y = drummer->y;
+	int actoff = img->height >> 1;
+	int pain = drummer->gib&1;
+
+	// histick
+	screen_draw_img_pain(screen, img, 13, 96 + ((drum_control & DRUM_CONTROL_HIHAT) ? actoff : 0), x+14, y+28, 21, 7, pain);
+
+	// hihat
+	screen_draw_img_pain(screen, img, 4, 110 + ((drum_control & DRUM_CONTROL_OPEN) ? actoff : 0), x+24, y+33, 20, 7, pain);
+
+	// head
+	screen_draw_img_pain(screen, img, 2, 29 + ((drum_control & DRUM_CONTROL_HEAD) ? actoff : 0), x+1, y+0, 17, 21, pain);
+
+	// kick
+	screen_draw_img_pain(screen, img, 1, 1 + ((drum_control & DRUM_CONTROL_KICK) ? actoff : 0), x+0, y+39, 30, 26, pain);
+
+	// snare
+	screen_draw_img_pain(screen, img, 3, 61 + ((drum_control & DRUM_CONTROL_SNARE) ? actoff : 0), x+3, y+18, 34, 23, pain);
+
+	// static
+	screen_draw_img_pain(screen, img, 40, 1, x+27, y+39, 26, 26, pain);
+
+}
+
+
 struct player {
 	// setup
 	struct img img;
@@ -1089,11 +1146,8 @@ int main(int argc, char** argv)
 	ASSERT(bg_img.width == SCREEN_WIDTH);
 	ASSERT(bg_img.height == SCREEN_HEIGHT);
 
-	struct img drummer_img;
-	// drummerp.png PNG 150x240 150x240+0+0 8-bit sRGB 26c 1.77KB 0.000u 0:00.000
-	img_load(&drummer_img, "drummerp.png");
-	ASSERT(drummer_img.width == 150);
-	ASSERT(drummer_img.height == 240);
+	struct drummer drummer;
+	drummer_init(&drummer);
 
 	struct player bass_player;
 	player_init(
@@ -1141,8 +1195,11 @@ int main(int argc, char** argv)
 			}
 		}
 
-
 		uint32_t audio_position;
+
+		if (drummer.dead) {
+			drum_control = 0;
+		}
 
 		audio_lock(&audio);
 		{
@@ -1189,11 +1246,14 @@ int main(int argc, char** argv)
 		float dt = 1.0f / (float)mode.refresh_rate;
 
 		zombie_director_update(&zombie_director, &piano_roll, dt);
+		drummer_update(&drummer, cool_drum_control, &zombie_director, dt);
 		player_update(&bass_player, &zombie_director, dt);
 		player_update(&guitar_player, &zombie_director, dt);
 
 		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
-		draw_drummer(screen, &drummer_img, cool_drum_control);
+
+		drummer_render(&drummer, screen);
+
 		player_render(&bass_player, screen, step);
 		player_render(&guitar_player, screen, step);
 		piano_roll_render(&piano_roll, screen);
