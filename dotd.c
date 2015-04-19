@@ -336,7 +336,7 @@ struct played_note {
 
 struct piano_roll {
 	float time_in_seconds;
-	struct played_note played_notes[MAX_PLAYED_NOTES];
+	struct played_note* played_notes;
 	struct song* song;
 	float gauge;
 	int gauge_last_step;
@@ -347,6 +347,8 @@ static void piano_roll_init(struct piano_roll* p, struct song* song)
 	memset(p, 0, sizeof(*p));
 	p->song = song;
 	p->gauge = 1.0f;
+	p->played_notes = calloc(MAX_PLAYED_NOTES, sizeof(*p->played_notes));
+	AN(p->played_notes);
 }
 
 static void piano_roll_update_position(struct piano_roll* p, struct audio* audio, uint32_t audio_position)
@@ -717,7 +719,7 @@ struct zombie_director {
 	struct img imgs[10];
 	struct rng rng;
 	float dt_accum;
-	struct zombie zombies[MAX_ZOMBIES];
+	struct zombie* zombies;
 	int spawn_counter;
 	int ticks;
 };
@@ -726,6 +728,9 @@ struct zombie_director {
 static void zombie_director_init(struct zombie_director* zd)
 {
 	memset(zd, 0, sizeof*zd);
+
+	zd->zombies = calloc(MAX_ZOMBIES, sizeof(*zd->zombies));
+	AN(zd->zombies);
 
 	const char* zs[] = {
 		"zombiep0.png",
