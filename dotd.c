@@ -320,25 +320,8 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 
 }
 
-static void audio_init(struct audio* audio)
+static void audio_start(struct audio* audio)
 {
-	memset(audio, 0, sizeof(*audio));
-
-	rng_seed(&audio->rng, 0);
-
-	int vorbis_error;
-
-	audio->bass_track = stb_vorbis_open_filename(asset_path("basstrack.ogg"), &vorbis_error, NULL);
-	if (audio->bass_track == NULL) arghf("stb_vorbis_open_filename() failed for basstrack (%d)", vorbis_error);
-
-	audio->guitar_track = stb_vorbis_open_filename(asset_path("guitartrack.ogg"), &vorbis_error, NULL);
-	if (audio->guitar_track == NULL) arghf("stb_vorbis_open_filename() failed for guitartrack (%d)", vorbis_error);
-
-	audio->mutex = SDL_CreateMutex();
-	SAN(audio->mutex);
-
-	drum_samples_init(&audio->drum_samples);
-
 	SDL_AudioSpec want, have;
 	want.freq = 44100;
 	want.format = AUDIO_F32;
@@ -360,12 +343,36 @@ static void audio_init(struct audio* audio)
 
 	audio->sample_rate = have.freq;
 
+	if (audio->bass_buffer) free(audio->bass_buffer);
 	audio->bass_buffer = malloc(sizeof(float) * 2 * have.samples);
 	AN(audio->bass_buffer);
+
+	if (audio->guitar_buffer) free(audio->guitar_buffer);
 	audio->guitar_buffer = malloc(sizeof(float) * 2 * have.samples);
 	AN(audio->guitar_buffer);
 
 	SDL_PauseAudioDevice(audio->device, 0);
+}
+
+static void audio_init(struct audio* audio)
+{
+	memset(audio, 0, sizeof(*audio));
+
+	rng_seed(&audio->rng, 0);
+
+	int vorbis_error;
+
+	audio->bass_track = stb_vorbis_open_filename(asset_path("basstrack.ogg"), &vorbis_error, NULL);
+	if (audio->bass_track == NULL) arghf("stb_vorbis_open_filename() failed for basstrack (%d)", vorbis_error);
+
+	audio->guitar_track = stb_vorbis_open_filename(asset_path("guitartrack.ogg"), &vorbis_error, NULL);
+	if (audio->guitar_track == NULL) arghf("stb_vorbis_open_filename() failed for guitartrack (%d)", vorbis_error);
+
+	audio->mutex = SDL_CreateMutex();
+	SAN(audio->mutex);
+
+	drum_samples_init(&audio->drum_samples);
+
 }
 
 static void audio_quit(struct audio* audio)
@@ -1283,6 +1290,50 @@ static void player_update(struct player* p, struct zombie_director* zombie_direc
 	}
 }
 
+struct font {
+	struct img img;
+	int x0;
+	int x;
+	int y;
+	char* buffer;
+};
+
+static void font_init(struct font* font)
+{
+	memset(font, 0, sizeof(*font));
+	img_load(&font->img, "font6.png");
+	font->buffer = malloc(4096);
+	AN(font->buffer);
+}
+
+static void font_set_cursor(struct font* font, int x, int y)
+{
+	font->x0 = x;
+	font->x = x;
+	font->y = y;
+}
+
+void font_printf(struct font* font, uint32_t* screen, const char* fmt, ...) __attribute__((format (printf, 3, 4)));
+void font_printf(struct font* font, uint32_t* screen, const char* fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	int n = vsprintf(font->buffer, fmt, args);
+	for (int i = 0; i < n; i++) {
+		unsigned char ch = font->buffer[i];
+		if (ch == '\n') {
+			font->x = font->x0;
+			font->y += 6;
+			continue;
+		}
+		int x0 = (ch & 15) * 6;
+		int y0 = (ch >> 4) * 6;
+		screen_draw_img(screen, &font->img, x0, y0, font->x, font->y, 6, 6);
+		font->x += 6;
+	}
+	va_end(args);
+}
+
 static void player_render(struct player* player, uint32_t* screen, int step, struct giblet_exploder* gx)
 {
 	giblet_exploder_render(gx, screen, player->giblet_owner);
@@ -1374,6 +1425,9 @@ int main(int argc, char** argv)
 	drum_control_keymap[','] = DRUM_CONTROL_HIHAT;
 	drum_control_keymap['.'] = DRUM_CONTROL_OPEN;
 
+	struct font font;
+	font_init(&font);
+
 	struct img bg_img;
 	// assets/background.png PNG 384x216 384x216+0+0 8-bit sRGB 256c 2.22KB 0.000u 0:00.000
 	img_load(&bg_img, "background.png");
@@ -1417,97 +1471,119 @@ int main(int argc, char** argv)
 	AN(screen);
 
 	int exiting = 0;
+	int menu = 1;
 	while (!exiting) {
-		SDL_Event e;
-		uint32_t drum_control = 0;
-		while (SDL_PollEvent(&e)) {
-			if (e.type == SDL_QUIT) exiting = 1;
-			if (e.type == SDL_KEYDOWN) {
-				if (e.key.keysym.sym == SDLK_ESCAPE) {
-					exiting = 1;
-				}
-
-				int k = e.key.keysym.sym;
-				if (k >= 32 && k < 128) {
-					drum_control |= drum_control_keymap[k];
+		//uint64_t t0 = SDL_GetPerformanceCounter();
+		
+		if (menu) {
+			SDL_Event e;
+			while (SDL_PollEvent(&e)) {
+				if (e.type == SDL_QUIT) exiting = 1;
+				if (e.type == SDL_KEYDOWN) {
+					if (e.key.keysym.sym == SDLK_ESCAPE) {
+						exiting = 1;
+					}
 				}
 			}
-		}
+			memset(screen, 0, sizeof(uint32_t) * SCREEN_WIDTH * SCREEN_HEIGHT);
 
-		uint32_t audio_position;
-
-		if (drummer.dead) {
-			drum_control = 0;
-		}
-
-		audio_lock(&audio);
-		{
-			audio_position = audio.position;
-			while (feedback_cursor != audio.drum_control_feedback_cursor) {
-				struct drum_control_feedback* fb = &audio.drum_control_feedback[feedback_cursor];
-				if (fb->value) {
-					piano_roll_register_drum_control_feedback(&piano_roll, &audio, fb);
-				}
-				feedback_cursor = (feedback_cursor + 1) & DRUM_CONTROL_FEEDBACK_MASK;
-			}
-			audio_emit_drum_control(&audio, drum_control);
-
-			// handle player death
-			if (bass_player.dead) audio.bass_stopped = 1;
-			if (guitar_player.dead) audio.guitar_stopped = 1;
-		}
-		audio_unlock(&audio);
-
-
-		memset(screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
-
-
-		uint32_t cool_drum_control = 0;
-		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
-			int mask = 1<<drum_id;
-			if (drum_control & mask) {
-				int cooldown = drum_id == DRUM_ID_OPEN ? mode.refresh_rate * 2: mode.refresh_rate / 10;
-				drum_control_cooldown[drum_id] = cooldown;
-				// open/close hihack
-				if (drum_id == DRUM_ID_HIHAT) drum_control_cooldown[DRUM_ID_OPEN] = 0;
-			}
-			if (drum_control_cooldown[drum_id] > 0) {
-				cool_drum_control |= mask;
-				drum_control_cooldown[drum_id]--;
-			}
-		}
-
-		int step = (int)((audio_position_to_seconds(&audio, audio_position) * (float)piano_roll.song->bpm * (float)piano_roll.song->lpb) / 60.0);
-
-		if (step & 4) {
-			cool_drum_control |= DRUM_CONTROL_HEAD;
-		}
-
-		piano_roll_update_position(&piano_roll, &audio, audio_position);
-		piano_roll_update_gauge(&piano_roll);
-
-		float dt = 1.0f / (float)mode.refresh_rate;
-
-		zombie_director_update(&zombie_director, &piano_roll, dt, &giblet_exploder);
-		drummer_update(&drummer, cool_drum_control, &zombie_director, dt, &giblet_exploder);
-		player_update(&bass_player, &zombie_director, dt, &giblet_exploder);
-		player_update(&guitar_player, &zombie_director, dt, &giblet_exploder);
-		giblet_exploder_update(&giblet_exploder, dt);
-
-		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
-
-		giblet_exploder_render(&giblet_exploder, screen, 0);
-		drummer_render(&drummer, screen, &giblet_exploder);
-		player_render(&bass_player, screen, step, &giblet_exploder);
-		player_render(&guitar_player, screen, step, &giblet_exploder);
-		if (drummer.dead) {
-			screen_draw_rect(screen, 0, 0, SCREEN_WIDTH, 64, 0);
+			font_set_cursor(&font, 50, 50);
+			font_printf(&font, screen, "hello world");
 		} else {
-			piano_roll_render(&piano_roll, screen);
+			SDL_Event e;
+			uint32_t drum_control = 0;
+			while (SDL_PollEvent(&e)) {
+				if (e.type == SDL_QUIT) exiting = 1;
+				if (e.type == SDL_KEYDOWN) {
+					if (e.key.keysym.sym == SDLK_ESCAPE) {
+						exiting = 1;
+					}
+
+					int k = e.key.keysym.sym;
+					if (k >= 32 && k < 128) {
+						drum_control |= drum_control_keymap[k];
+					}
+				}
+			}
+
+			uint32_t audio_position;
+
+			if (drummer.dead) {
+				drum_control = 0;
+			}
+
+			audio_lock(&audio);
+			{
+				audio_position = audio.position;
+				while (feedback_cursor != audio.drum_control_feedback_cursor) {
+					struct drum_control_feedback* fb = &audio.drum_control_feedback[feedback_cursor];
+					if (fb->value) {
+						piano_roll_register_drum_control_feedback(&piano_roll, &audio, fb);
+					}
+					feedback_cursor = (feedback_cursor + 1) & DRUM_CONTROL_FEEDBACK_MASK;
+				}
+				audio_emit_drum_control(&audio, drum_control);
+
+				// handle player death
+				if (bass_player.dead) audio.bass_stopped = 1;
+				if (guitar_player.dead) audio.guitar_stopped = 1;
+			}
+			audio_unlock(&audio);
+
+
+			memset(screen, 0, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
+
+
+			uint32_t cool_drum_control = 0;
+			for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
+				int mask = 1<<drum_id;
+				if (drum_control & mask) {
+					int cooldown = drum_id == DRUM_ID_OPEN ? mode.refresh_rate * 2: mode.refresh_rate / 10;
+					drum_control_cooldown[drum_id] = cooldown;
+					// open/close hihack
+					if (drum_id == DRUM_ID_HIHAT) drum_control_cooldown[DRUM_ID_OPEN] = 0;
+				}
+				if (drum_control_cooldown[drum_id] > 0) {
+					cool_drum_control |= mask;
+					drum_control_cooldown[drum_id]--;
+				}
+			}
+
+			int step = (int)((audio_position_to_seconds(&audio, audio_position) * (float)piano_roll.song->bpm * (float)piano_roll.song->lpb) / 60.0);
+
+			if (step & 4) {
+				cool_drum_control |= DRUM_CONTROL_HEAD;
+			}
+
+			piano_roll_update_position(&piano_roll, &audio, audio_position);
+			piano_roll_update_gauge(&piano_roll);
+
+			float dt = 1.0f / (float)mode.refresh_rate;
+
+			zombie_director_update(&zombie_director, &piano_roll, dt, &giblet_exploder);
+			drummer_update(&drummer, cool_drum_control, &zombie_director, dt, &giblet_exploder);
+			player_update(&bass_player, &zombie_director, dt, &giblet_exploder);
+			player_update(&guitar_player, &zombie_director, dt, &giblet_exploder);
+			giblet_exploder_update(&giblet_exploder, dt);
+
+			memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
+
+			giblet_exploder_render(&giblet_exploder, screen, 0);
+			drummer_render(&drummer, screen, &giblet_exploder);
+			player_render(&bass_player, screen, step, &giblet_exploder);
+			player_render(&guitar_player, screen, step, &giblet_exploder);
+			if (drummer.dead) {
+				screen_draw_rect(screen, 0, 0, SCREEN_WIDTH, 64, 0);
+			} else {
+				piano_roll_render(&piano_roll, screen);
+			}
+
+			zombie_director_render(&zombie_director, screen, &giblet_exploder);
+
+
+			//uint64_t frame_time = SDL_GetPerformanceCounter() - t0;
+			//printf("%lu\n", frame_time);
 		}
-
-		zombie_director_render(&zombie_director, screen, &giblet_exploder);
-
 		present_screen(window, renderer, texture, screen);
 	}
 
