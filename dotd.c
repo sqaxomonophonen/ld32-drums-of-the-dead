@@ -194,26 +194,23 @@ struct audio {
 
 	SDL_mutex* mutex;
 
-	uint32_t drum_control_ring[DRUM_CONTROL_RING_LENGTH];
-	uint32_t drum_control_write_cursor;
-	uint32_t drum_control_read_cursor;
-	
-	int drum_control_feedback_cursor;
-	struct drum_control_feedback drum_control_feedback[DRUM_CONTROL_FEEDBACK_N];
-
-	uint32_t position;
-
 	struct drum_samples drum_samples;
-
-	struct sample_ctx drum_sample_ctx[DRUM_ID_MAX];
 
 	stb_vorbis* bass_track;
 	stb_vorbis* guitar_track;
 	float* bass_buffer;
 	float* guitar_buffer;
 
+	// state
 	int bass_stopped;
 	int guitar_stopped;
+	struct sample_ctx drum_sample_ctx[DRUM_ID_MAX];
+	uint32_t position;
+	int drum_control_feedback_cursor;
+	struct drum_control_feedback drum_control_feedback[DRUM_CONTROL_FEEDBACK_N];
+	uint32_t drum_control_ring[DRUM_CONTROL_RING_LENGTH];
+	uint32_t drum_control_write_cursor;
+	uint32_t drum_control_read_cursor;
 };
 
 static void audio_lock(struct audio* audio)
@@ -320,13 +317,38 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 
 }
 
-static void audio_start(struct audio* audio)
+static void audio_start(struct audio* audio, int audio_buffer_length_exp)
 {
+	audio->bass_stopped = 0;
+	audio->guitar_stopped = 0;
+	memset(audio->drum_sample_ctx, 0, sizeof(struct sample_ctx) * DRUM_ID_MAX);
+	audio->position = 0;
+	audio->drum_control_feedback_cursor = 0;
+	memset(audio->drum_control_feedback, 0, sizeof(struct drum_control_feedback) * DRUM_CONTROL_FEEDBACK_N);
+	memset(audio->drum_control_ring, 0, sizeof(uint32_t) * DRUM_CONTROL_RING_LENGTH);
+	audio->drum_control_write_cursor = 0;
+	audio->drum_control_read_cursor = 0;
+
+	#if 0
+	int bass_stopped;
+	int guitar_stopped;
+	struct sample_ctx drum_sample_ctx[DRUM_ID_MAX];
+	uint32_t position;
+	int drum_control_feedback_cursor;
+	struct drum_control_feedback drum_control_feedback[DRUM_CONTROL_FEEDBACK_N];
+	uint32_t drum_control_ring[DRUM_CONTROL_RING_LENGTH];
+	uint32_t drum_control_write_cursor;
+	uint32_t drum_control_read_cursor;
+	#endif
+
+	stb_vorbis_seek_start(audio->bass_track);
+	stb_vorbis_seek_start(audio->guitar_track);
+
 	SDL_AudioSpec want, have;
 	want.freq = 44100;
 	want.format = AUDIO_F32;
 	want.channels = 2;
-	want.samples = 512;
+	want.samples = 256 << audio_buffer_length_exp;
 	// XXX ^^^ might want to be able to change this..
 	// 16th notes at 120BPM is 0.125s between notes
 	// 512 samples per callback at 44100hz is ~0.012s per frame, i.e. ~10x
@@ -352,6 +374,12 @@ static void audio_start(struct audio* audio)
 	AN(audio->guitar_buffer);
 
 	SDL_PauseAudioDevice(audio->device, 0);
+}
+
+static void audio_stop(struct audio* audio)
+{
+	SDL_PauseAudioDevice(audio->device, 1);
+	SDL_CloseAudioDevice(audio->device);
 }
 
 static void audio_init(struct audio* audio)
@@ -395,9 +423,11 @@ struct played_note {
 };
 
 struct piano_roll {
+	struct song* song;
+
+	// state
 	float time_in_seconds;
 	struct played_note* played_notes;
-	struct song* song;
 	float gauge;
 	int gauge_last_step;
 };
@@ -406,9 +436,16 @@ static void piano_roll_init(struct piano_roll* p, struct song* song)
 {
 	memset(p, 0, sizeof(*p));
 	p->song = song;
-	p->gauge = 1.0f;
 	p->played_notes = calloc(MAX_PLAYED_NOTES, sizeof(*p->played_notes));
 	AN(p->played_notes);
+}
+
+static void piano_roll_reset(struct piano_roll* p)
+{
+	p->time_in_seconds = 0.0f;
+	p->gauge = 1.0f;
+	p->gauge_last_step = 0;
+	memset(p->played_notes, 0, sizeof(*p->played_notes) * MAX_PLAYED_NOTES);
 }
 
 static void piano_roll_update_position(struct piano_roll* p, struct audio* audio, uint32_t audio_position)
@@ -426,6 +463,8 @@ static void piano_roll_gauge_dstep(struct piano_roll* p, int match, float dstep)
 
 static void piano_roll_update_gauge(struct piano_roll* p)
 {
+	// TODO bonus after 4 bars or something, or at certain points in the
+	// music .. export from .xrns?
 	float current_step = (p->time_in_seconds * (float)p->song->bpm * (float)p->song->lpb) / 60.0;
 	int step_until = floorf(current_step - (float)p->song->lpb);
 	for (int step = p->gauge_last_step; step < step_until; step++) {
@@ -816,6 +855,8 @@ struct giblet {
 
 struct giblet_exploder {
 	struct img img;
+
+	// state
 	int next_giblet;
 	struct giblet* giblets;
 	struct rng rng;
@@ -828,6 +869,12 @@ static void giblet_exploder_init(struct giblet_exploder* gx)
 	// height:7
 	// number: 8
 	img_load(&gx->img, "gilbets.png");
+}
+
+static void giblet_exploder_reset(struct giblet_exploder* gx)
+{
+	gx->next_giblet = 0;
+	memset(gx->giblets, 0, sizeof(*gx->giblets) * MAX_GIBLETS);
 	rng_seed(&gx->rng, 666);
 }
 
@@ -923,6 +970,8 @@ static int zombie_effective_x(struct zombie* z)
 struct zombie_director {
 	struct img imgs[10];
 	struct rng rng;
+
+	// state
 	float dt_accum;
 	struct zombie* zombies;
 	int spawn_counter;
@@ -958,8 +1007,16 @@ static void zombie_director_init(struct zombie_director* zd)
 		ASSERT(img->width == 163);
 		ASSERT(img->height == 984);
 	}
+}
 
+static void zombie_director_reset(struct zombie_director* zd)
+{
 	rng_seed(&zd->rng, 420);
+	zd->dt_accum = 0;
+	memset(zd->zombies, 0, sizeof(*zd->zombies) * MAX_ZOMBIES);
+	zd->spawn_counter = 0;
+	zd->ticks = 0;
+	zd->next_giblet_owner = 0;
 }
 
 static void zombie_director_update(struct zombie_director* zd, struct piano_roll* piano_roll, float dt, struct giblet_exploder* gx)
@@ -1132,13 +1189,18 @@ struct drummer {
 
 static void drummer_init(struct drummer* drummer)
 {
-	memset(drummer, 0, sizeof(*drummer));
-
 	// drummerp.png PNG 150x240 150x240+0+0 8-bit sRGB 26c 1.77KB 0.000u 0:00.000
 	img_load(&drummer->img, "drummerp.png");
 	ASSERT(drummer->img.width == 150);
 	ASSERT(drummer->img.height == 240);
 
+}
+
+static void drummer_reset(struct drummer* drummer)
+{
+	struct img save = drummer->img;
+	memset(drummer, 0, sizeof(*drummer));
+	drummer->img = save;
 	drummer->x = 45;
 	drummer->y = 112;
 	drummer->kill_dx = 14;
@@ -1254,6 +1316,13 @@ static void player_init(struct player* player, const char* asset, int width, int
 	player->giblet_owner = giblet_owner;
 }
 
+static void player_reset(struct player* player)
+{
+	player->gib = 0;
+	player->dead = 0;
+	player->dt_accum = 0;
+}
+
 static int player_effective_x(struct player* player)
 {
 	return player->x + player->kill_dx;
@@ -1296,6 +1365,7 @@ struct font {
 	int x;
 	int y;
 	char* buffer;
+	uint32_t color;
 };
 
 static void font_init(struct font* font)
@@ -1304,6 +1374,11 @@ static void font_init(struct font* font)
 	img_load(&font->img, "font6.png");
 	font->buffer = malloc(4096);
 	AN(font->buffer);
+}
+
+static void font_set_color(struct font* font, uint32_t color)
+{
+	font->color = color;
 }
 
 static void font_set_cursor(struct font* font, int x, int y)
@@ -1323,12 +1398,12 @@ void font_printf(struct font* font, uint32_t* screen, const char* fmt, ...)
 		unsigned char ch = font->buffer[i];
 		if (ch == '\n') {
 			font->x = font->x0;
-			font->y += 6;
+			font->y += 9;
 			continue;
 		}
 		int x0 = (ch & 15) * 6;
 		int y0 = (ch >> 4) * 6;
-		screen_draw_img(screen, &font->img, x0, y0, font->x, font->y, 6, 6);
+		screen_draw_img_color(screen, &font->img, x0, y0, font->x, font->y, 6, 6, font->color);
 		font->x += 6;
 	}
 	va_end(args);
@@ -1421,9 +1496,9 @@ int main(int argc, char** argv)
 	drum_control_keymap['x'] = DRUM_CONTROL_KICK;
 	drum_control_keymap['c'] = DRUM_CONTROL_SNARE;
 	drum_control_keymap['v'] = DRUM_CONTROL_SNARE;
+	drum_control_keymap['n'] = DRUM_CONTROL_HIHAT;
 	drum_control_keymap['m'] = DRUM_CONTROL_HIHAT;
-	drum_control_keymap[','] = DRUM_CONTROL_HIHAT;
-	drum_control_keymap['.'] = DRUM_CONTROL_OPEN;
+	drum_control_keymap[','] = DRUM_CONTROL_OPEN;
 
 	struct font font;
 	font_init(&font);
@@ -1472,23 +1547,105 @@ int main(int argc, char** argv)
 
 	int exiting = 0;
 	int menu = 1;
+	int menu_selection = 0;
+	int audio_buffer_length_exp = 1;
 	while (!exiting) {
 		//uint64_t t0 = SDL_GetPerformanceCounter();
 		
 		if (menu) {
 			SDL_Event e;
+			int select = 0;
+			int pressed_char = 0;
+			int menu_length = 7;
+			int d = 0;
 			while (SDL_PollEvent(&e)) {
 				if (e.type == SDL_QUIT) exiting = 1;
 				if (e.type == SDL_KEYDOWN) {
 					if (e.key.keysym.sym == SDLK_ESCAPE) {
 						exiting = 1;
+					} else if (e.key.keysym.sym == SDLK_RETURN) {
+						select = 1;
+					} else if (e.key.keysym.sym == SDLK_UP) {
+						menu_selection--;
+						if (menu_selection < 0)  menu_selection += menu_length;
+					} else if (e.key.keysym.sym == SDLK_DOWN) {
+						menu_selection++;
+						if (menu_selection >= menu_length)  menu_selection -= menu_length;
+					} else if (e.key.keysym.sym == SDLK_LEFT) {
+						d = -1;
+					} else if (e.key.keysym.sym == SDLK_RIGHT) {
+						d = 1;
+					} else {
+						int k = e.key.keysym.sym;
+						if (k >= 32 && k < 128) {
+							pressed_char = k;
+						}
 					}
 				}
 			}
+
+			switch (menu_selection) {
+				case 0:
+					if (select) {
+						menu = 0;
+						drummer_reset(&drummer);
+						player_reset(&bass_player);
+						player_reset(&guitar_player);
+						zombie_director_reset(&zombie_director);
+						piano_roll_reset(&piano_roll);
+						giblet_exploder_reset(&giblet_exploder);
+						audio_start(&audio, audio_buffer_length_exp);
+					}
+					break;
+				case 5:
+					audio_buffer_length_exp = (audio_buffer_length_exp + d) % 4;
+					if (audio_buffer_length_exp < 0) audio_buffer_length_exp = 3;
+					break;
+				case 6:
+					if (select) {
+						exiting = 1;
+					}
+					break;
+				case 1: case 2: case 3: case 4:
+					if (pressed_char) {
+						drum_control_keymap[pressed_char] = (1<<(menu_selection-1));
+					}
+					break;
+			}
+
+
+
 			memset(screen, 0, sizeof(uint32_t) * SCREEN_WIDTH * SCREEN_HEIGHT);
 
-			font_set_cursor(&font, 50, 50);
-			font_printf(&font, screen, "hello world");
+			uint32_t select_color = mkcol(255,255,255);
+			uint32_t unselect_color = mkcol(128,128,128);
+
+			font_set_color(&font, menu_selection == 0 ? select_color : unselect_color);
+			font_set_cursor(&font, 150, 50);
+			font_printf(&font, screen, "start game\n");
+
+			const char* drum_names[] = {
+				"kick",
+				"snare",
+				"hihat",
+				"open"
+			};
+
+			for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
+				font_set_color(&font, menu_selection == (1+drum_id) ? select_color : unselect_color);
+				font_printf(&font, screen, "%s keys: ", drum_names[drum_id]);
+				for (int c = 32; c < 128; c++) {
+					if (drum_control_keymap[c] & (1<<drum_id)) {
+						font_printf(&font, screen, "%c", c);
+					}
+				}
+				font_printf(&font, screen, "\n");
+			}
+
+			font_set_color(&font, menu_selection == 5 ? select_color : unselect_color);
+			font_printf(&font, screen, "audio buffer length: %d\n", 256 << audio_buffer_length_exp);
+			font_set_color(&font, menu_selection == 6 ? select_color : unselect_color);
+			font_printf(&font, screen, "quit to dos");
 		} else {
 			SDL_Event e;
 			uint32_t drum_control = 0;
@@ -1496,7 +1653,8 @@ int main(int argc, char** argv)
 				if (e.type == SDL_QUIT) exiting = 1;
 				if (e.type == SDL_KEYDOWN) {
 					if (e.key.keysym.sym == SDLK_ESCAPE) {
-						exiting = 1;
+						menu = 1;
+						audio_stop(&audio);
 					}
 
 					int k = e.key.keysym.sym;
