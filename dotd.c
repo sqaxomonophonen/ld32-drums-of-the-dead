@@ -773,6 +773,7 @@ static void giblet_exploder_bang(struct giblet_exploder* gx, int x0, int y0, int
 		if (gx->next_giblet >= MAX_GIBLETS) gx->next_giblet = 0;
 
 		g->active = 1;
+		g->grounded = 0;
 		g->owner = owner;
 		g->x = (float)x0 + (float)w * rng_float(&gx->rng);
 		g->y = (float)y0 + (float)h * rng_float(&gx->rng);
@@ -800,6 +801,7 @@ static void giblet_exploder_update(struct giblet_exploder* gx, float dt)
 		if (g->y > floor_y) {
 			g->y = floor_y;
 			g->grounded = 1;
+			g->owner = 0;
 		}
 	}
 }
@@ -809,6 +811,7 @@ static void giblet_exploder_render(struct giblet_exploder* gx, uint32_t* screen,
 	for (int i = 0; i < MAX_GIBLETS; i++) {
 		struct giblet* g = &gx->giblets[i];
 		if (!g->active) continue;
+		if (g->owner != owner) continue;
 		int x = (int)g->x;
 		int y = (int)g->y;
 		screen_draw_img(screen, &gx->img, g->type * 12, 0, x, y, 12, 7);
@@ -927,7 +930,7 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 					found->x = zombie_start_x;
 					found->y = zombie_start_y + (ri%zombie_start_y_spread);
 					found->style = (ri>>5)%10;
-					found->giblet_owner = zd->next_giblet_owner++;
+					found->giblet_owner = ++zd->next_giblet_owner;
 				}
 			}
 
@@ -1429,6 +1432,7 @@ int main(int argc, char** argv)
 
 		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
 
+		giblet_exploder_render(&giblet_exploder, screen, 0);
 		drummer_render(&drummer, screen, &giblet_exploder);
 		player_render(&bass_player, screen, step, &giblet_exploder);
 		player_render(&guitar_player, screen, step, &giblet_exploder);
