@@ -682,6 +682,90 @@ static void present_screen(SDL_Window* window, SDL_Renderer* renderer, SDL_Textu
 	SDL_RenderPresent(renderer);
 }
 
+
+#define MAX_GIBLETS (512)
+
+struct giblet {
+	int type;
+	int owner;
+	float x;
+	float y;
+	float vx;
+	float vy;
+	int active;
+	int grounded;
+};
+
+
+struct giblet_exploder {
+	struct img img;
+	int next_giblet;
+	struct giblet* giblets;
+	struct rng rng;
+};
+
+static void giblet_exploder_init(struct giblet_exploder* gx)
+{
+	memset(gx, 0, sizeof(*gx));
+	gx->giblets = calloc(MAX_GIBLETS, sizeof(*gx->giblets));
+	// height:7
+	// number: 8
+	img_load(&gx->img, "gilbets.png");
+	rng_seed(&gx->rng, 666);
+}
+
+static void giblet_exploder_bang(struct giblet_exploder* gx, int x0, int y0, int w, int h, int owner)
+{
+	int count = 50;
+	float max_speed = 40;
+	for (int i = 0; i < count; i++) {
+		struct giblet* g = &gx->giblets[gx->next_giblet++];
+		if (gx->next_giblet >= MAX_GIBLETS) gx->next_giblet = 0;
+
+		g->active = 1;
+		g->owner = owner;
+		g->x = (float)x0 + (float)w * rng_float(&gx->rng);
+		g->y = (float)y0 + (float)h * rng_float(&gx->rng);
+		g->vx = (rng_float(&gx->rng) * 2.0 - 1.0) * max_speed;
+		g->vy = (rng_float(&gx->rng) * 2.0 - 1.0) * max_speed;
+		g->type = rng_uint32(&gx->rng) & 7;
+	}
+}
+
+static void giblet_exploder_update(struct giblet_exploder* gx, float dt)
+{
+	float gravity = 40.0f;
+	int base_floor_y = 169;
+
+	for (int i = 0; i < MAX_GIBLETS; i++) {
+		struct giblet* g = &gx->giblets[i];
+		if (!g->active || g->grounded) continue;
+		g->vy += gravity * dt;
+		g->x += g->vx * dt;
+		g->y += g->vy * dt;
+		struct rng rng;
+		rng_seed(&rng, g->owner * 54531 + i);
+		int floor_dy = rng_uint32(&rng) % 28;
+		int floor_y = base_floor_y + floor_dy - 14;
+		if (g->y > floor_y) {
+			g->y = floor_y;
+			g->grounded = 1;
+		}
+	}
+}
+
+static void giblet_exploder_render(struct giblet_exploder* gx, uint32_t* screen, int owner)
+{
+	for (int i = 0; i < MAX_GIBLETS; i++) {
+		struct giblet* g = &gx->giblets[i];
+		if (!g->active) continue;
+		int x = (int)g->x;
+		int y = (int)g->y;
+		screen_draw_img(screen, &gx->img, g->type * 12, 0, x, y, 12, 7);
+	}
+}
+
+
 #define MAX_ZOMBIES (128)
 
 struct zombie {
@@ -693,6 +777,7 @@ struct zombie {
 	int gib;
 	int x;
 	int y;
+	int giblet_owner;
 };
 
 static int zombie_effective_x(struct zombie* z)
@@ -722,6 +807,7 @@ struct zombie_director {
 	struct zombie* zombies;
 	int spawn_counter;
 	int ticks;
+	int next_giblet_owner;
 };
 
 
@@ -756,7 +842,7 @@ static void zombie_director_init(struct zombie_director* zd)
 	rng_seed(&zd->rng, 420);
 }
 
-static void zombie_director_update(struct zombie_director* zd, struct piano_roll* piano_roll, float dt)
+static void zombie_director_update(struct zombie_director* zd, struct piano_roll* piano_roll, float dt, struct giblet_exploder* gx)
 {
 	float tick_time = 0.05f;
 	int spawn_ticks = 12;
@@ -791,6 +877,7 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 					found->x = zombie_start_x;
 					found->y = zombie_start_y + (ri%zombie_start_y_spread);
 					found->style = (ri>>5)%10;
+					found->giblet_owner = zd->next_giblet_owner++;
 				}
 			}
 
@@ -808,6 +895,13 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 				z->gib++;
 				if (z->gib > gib_duration) {
 					z->active = 0;
+					giblet_exploder_bang(
+						gx, 
+						zombie_effective_x(z) + 24,
+						z->y + 11,
+						18,
+						71,
+						z->giblet_owner);
 					continue;
 				}
 			}
@@ -888,17 +982,19 @@ static int zombie_y_sort(const void* va, const void* vb)
 	return a->y - b->y;
 }
 
-static void zombie_director_render(struct zombie_director* zd, uint32_t* screen)
+static void zombie_director_render(struct zombie_director* zd, uint32_t* screen, struct giblet_exploder* gx)
 {
 	qsort(zd->zombies, MAX_ZOMBIES, sizeof(struct zombie), zombie_y_sort);
 	int anim_offset = 82;
 	for (int i = 0; i < MAX_ZOMBIES; i++) {
 		struct zombie* z = &zd->zombies[i];
+		giblet_exploder_render(gx, screen, z->giblet_owner);
 		if (!z->active) continue;
 		int pain = z->gib & 1;
 		screen_draw_img_pain(screen, &zd->imgs[z->style], 0, anim_offset * z->frame, z->x, z->y, 163, anim_offset, pain);
 	}
 }
+
 
 struct drummer {
 	struct img img;
@@ -910,6 +1006,8 @@ struct drummer {
 	float dt_accum;
 	int gib;
 	int dead;
+
+	int giblet_owner;
 };
 
 static void drummer_init(struct drummer* drummer)
@@ -924,9 +1022,10 @@ static void drummer_init(struct drummer* drummer)
 	drummer->x = 45;
 	drummer->y = 112;
 	drummer->kill_dx = 14;
+	drummer->giblet_owner = -1000;
 }
 
-static void drummer_update(struct drummer* drummer, int drum_control, struct zombie_director* zombie_director, float dt)
+static void drummer_update(struct drummer* drummer, int drum_control, struct zombie_director* zombie_director, float dt, struct giblet_exploder* gx)
 {
 	drummer->drum_control = drum_control;
 	if (drummer->dead) return;
@@ -941,6 +1040,13 @@ static void drummer_update(struct drummer* drummer, int drum_control, struct zom
 		if (drummer->gib) {
 			if (drummer->gib > gib_duration) {
 				drummer->dead = 1;
+				giblet_exploder_bang(
+					gx,
+					drummer->x,
+					drummer->y,
+					50,
+					90,
+					drummer->giblet_owner);
 				return;
 			}
 			drummer->gib++;
@@ -952,8 +1058,9 @@ static void drummer_update(struct drummer* drummer, int drum_control, struct zom
 	}
 }
 
-static void drummer_render(struct drummer* drummer, uint32_t* screen)
+static void drummer_render(struct drummer* drummer, uint32_t* screen, struct giblet_exploder* gx)
 {
+	giblet_exploder_render(gx, screen, drummer->giblet_owner);
 	#if 0
 	// src offset, src dim - draw offset
 	histick 13,96 21x7 - 14,28
@@ -1003,6 +1110,7 @@ struct player {
 	int anim_offset;
 	int frames;
 	int kill_dx;
+	int giblet_owner;
 
 	// state
 	int gib;
@@ -1010,7 +1118,7 @@ struct player {
 	float dt_accum;
 };
 
-static void player_init(struct player* player, const char* asset, int width, int height, int x, int y, int anim_offset, int frames, int kill_dx)
+static void player_init(struct player* player, const char* asset, int width, int height, int x, int y, int anim_offset, int frames, int kill_dx, int giblet_owner)
 {
 	memset(player, 0, sizeof(*player));
 	img_load(&player->img, asset);
@@ -1023,6 +1131,7 @@ static void player_init(struct player* player, const char* asset, int width, int
 	player->anim_offset = anim_offset;
 	player->frames = frames;
 	player->kill_dx = kill_dx;
+	player->giblet_owner = giblet_owner;
 }
 
 static int player_effective_x(struct player* player)
@@ -1030,7 +1139,7 @@ static int player_effective_x(struct player* player)
 	return player->x + player->kill_dx;
 }
 
-static void player_update(struct player* p, struct zombie_director* zombie_director, float dt)
+static void player_update(struct player* p, struct zombie_director* zombie_director, float dt, struct giblet_exploder* gx)
 {
 	if (p->dead) return;
 
@@ -1043,6 +1152,13 @@ static void player_update(struct player* p, struct zombie_director* zombie_direc
 		if (p->gib) {
 			if (p->gib > gib_duration) {
 				p->dead = 1;
+				giblet_exploder_bang(
+					gx,
+					p->x,
+					p->y,
+					40,
+					100,
+					p->giblet_owner);
 				return;
 			}
 			p->gib++;
@@ -1054,8 +1170,10 @@ static void player_update(struct player* p, struct zombie_director* zombie_direc
 	}
 }
 
-static void player_render(struct player* player, uint32_t* screen, int step)
+static void player_render(struct player* player, uint32_t* screen, int step, struct giblet_exploder* gx)
 {
+	giblet_exploder_render(gx, screen, player->giblet_owner);
+
 	if (player->dead) return;
 
 	int frame = (step>>1) % player->frames;
@@ -1071,8 +1189,6 @@ static void player_render(struct player* player, uint32_t* screen, int step)
 		player->anim_offset,
 		pain);
 }
-
-
 
 int main(int argc, char** argv)
 {
@@ -1151,6 +1267,9 @@ int main(int argc, char** argv)
 	ASSERT(bg_img.width == SCREEN_WIDTH);
 	ASSERT(bg_img.height == SCREEN_HEIGHT);
 
+	struct giblet_exploder giblet_exploder;
+	giblet_exploder_init(&giblet_exploder);
+
 	struct drummer drummer;
 	drummer_init(&drummer);
 
@@ -1162,7 +1281,8 @@ int main(int argc, char** argv)
 		78, 101,
 		80,
 		5,
-		42);
+		42,
+		-1);
 
 	struct player guitar_player;
 	player_init(
@@ -1172,7 +1292,8 @@ int main(int argc, char** argv)
 		120, 96,
 		89,
 		6,
-		34);
+		34,
+		-2);
 
 	struct zombie_director zombie_director;
 	zombie_director_init(&zombie_director);
@@ -1250,19 +1371,19 @@ int main(int argc, char** argv)
 
 		float dt = 1.0f / (float)mode.refresh_rate;
 
-		zombie_director_update(&zombie_director, &piano_roll, dt);
-		drummer_update(&drummer, cool_drum_control, &zombie_director, dt);
-		player_update(&bass_player, &zombie_director, dt);
-		player_update(&guitar_player, &zombie_director, dt);
+		zombie_director_update(&zombie_director, &piano_roll, dt, &giblet_exploder);
+		drummer_update(&drummer, cool_drum_control, &zombie_director, dt, &giblet_exploder);
+		player_update(&bass_player, &zombie_director, dt, &giblet_exploder);
+		player_update(&guitar_player, &zombie_director, dt, &giblet_exploder);
+		giblet_exploder_update(&giblet_exploder, dt);
 
 		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
 
-		drummer_render(&drummer, screen);
-
-		player_render(&bass_player, screen, step);
-		player_render(&guitar_player, screen, step);
+		drummer_render(&drummer, screen, &giblet_exploder);
+		player_render(&bass_player, screen, step, &giblet_exploder);
+		player_render(&guitar_player, screen, step, &giblet_exploder);
 		piano_roll_render(&piano_roll, screen);
-		zombie_director_render(&zombie_director, screen);
+		zombie_director_render(&zombie_director, screen, &giblet_exploder);
 
 		present_screen(window, renderer, texture, screen);
 	}
