@@ -5,10 +5,10 @@ XX=./xrns-export.sh
 a.o: a.c
 	$(CC) $(CFLAGS) -c a.c
 
-test.xrns.inc.c: workbench/test.xrns
-	$(XX) workbench/test.xrns > test.xrns.inc.c
+song.xrns.inc.c: song.xrns
+	$(XX) song.xrns > song.xrns.inc.c
 
-dotd.o: dotd.c a.h test.xrns.inc.c
+dotd.o: dotd.c a.h song.xrns.inc.c
 	$(CC) $(CFLAGS) -c dotd.c
 
 $(EXE): dotd.o a.o

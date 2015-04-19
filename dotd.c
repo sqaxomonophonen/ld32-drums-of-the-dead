@@ -9,7 +9,7 @@
 
 // SONGS
 #include "song.h"
-#include "test.xrns.inc.c"
+#include "song.xrns.inc.c"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -665,9 +665,10 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
 			int mask = 1<<drum_id;
 			if (!(dctl & mask)) continue;
-			int width = 5;
-			screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing, 3, 2, drum_color_light(drum_id));
-			screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing+7, 3, 2, drum_color_light(drum_id));
+			// int width =5;
+			//screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing, 3, 2, drum_color_light(drum_id));
+			//screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing+7, 3, 2, drum_color_light(drum_id));
+			screen_draw_rect(screen, (int)x-2, y0+drum_id*spacing+2, 5, 5, drum_color_light(drum_id));
 		}
 	}
 
@@ -678,7 +679,9 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		if (note->time_in_seconds <= 0.0) continue;
 		float dt = note->time_in_seconds - piano_roll->time_in_seconds;
 		float x = x0 + dt * second_width;
-		screen_draw_rect(screen, (int)x-2, y0+note->drum_id*spacing+2, 5, 5, drum_color(note->drum_id));
+		//screen_draw_rect(screen, (int)x-2, y0+note->drum_id*spacing+2, 5, 5, drum_color(note->drum_id));
+		screen_draw_rect(screen, (int)x-5/2, y0+note->drum_id*spacing, 3, 2, drum_color(note->drum_id));
+		screen_draw_rect(screen, (int)x-5/2, y0+note->drum_id*spacing+7, 3, 2, drum_color(note->drum_id));
 	}
 
 	// render gauge
@@ -1298,7 +1301,7 @@ int main(int argc, char** argv)
 	audio_init(&audio);
 
 	struct piano_roll piano_roll;
-	piano_roll_init(&piano_roll, &song_data_test);
+	piano_roll_init(&piano_roll, &song_data_song);
 
 	uint32_t feedback_cursor = 0;
 
