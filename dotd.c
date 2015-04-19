@@ -1033,9 +1033,9 @@ int main(int argc, char** argv)
 	drum_control_keymap['x'] = DRUM_CONTROL_KICK;
 	drum_control_keymap['c'] = DRUM_CONTROL_SNARE;
 	drum_control_keymap['v'] = DRUM_CONTROL_SNARE;
+	drum_control_keymap['m'] = DRUM_CONTROL_HIHAT;
 	drum_control_keymap[','] = DRUM_CONTROL_HIHAT;
-	drum_control_keymap['.'] = DRUM_CONTROL_HIHAT;
-	drum_control_keymap['/'] = DRUM_CONTROL_OPEN;
+	drum_control_keymap['.'] = DRUM_CONTROL_OPEN;
 
 	struct img bg_img;
 	// assets/background.png PNG 384x216 384x216+0+0 8-bit sRGB 256c 2.22KB 0.000u 0:00.000
