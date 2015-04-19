@@ -1714,7 +1714,9 @@ int main(int argc, char** argv)
 
 			int step = (int)((audio_position_to_seconds(&audio, audio_position) * (float)piano_roll.song->bpm * (float)piano_roll.song->lpb) / 60.0);
 
-			if (step & 4) {
+			int song_end = step > piano_roll.song->length;
+
+			if (step & 4 && !song_end) {
 				cool_drum_control |= DRUM_CONTROL_HEAD;
 			}
 
@@ -1733,8 +1735,8 @@ int main(int argc, char** argv)
 
 			giblet_exploder_render(&giblet_exploder, screen, 0);
 			drummer_render(&drummer, screen, &giblet_exploder);
-			player_render(&bass_player, screen, step, &giblet_exploder);
-			player_render(&guitar_player, screen, step, &giblet_exploder);
+			player_render(&bass_player, screen, song_end ? 0 : step, &giblet_exploder);
+			player_render(&guitar_player, screen, song_end ? 0 : step, &giblet_exploder);
 			if (drummer.dead) {
 				screen_draw_rect(screen, 0, 0, SCREEN_WIDTH, 64, 0);
 			} else {
