@@ -6,7 +6,7 @@ a.o: a.c
 	$(CC) $(CFLAGS) -c a.c
 
 song.xrns.inc.c: song.xrns
-	$(XX) song.xrns > song.xrns.inc.c
+	$(XX) song.xrns song.xrns.inc.c
 
 dotd.o: dotd.c a.h song.xrns.inc.c
 	$(CC) $(CFLAGS) -c dotd.c

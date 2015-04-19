@@ -27,16 +27,18 @@ for e in sequence:
 		for line in t.find('Lines') or []:
 			index = int(line.get('index'))
 			instr = int(line.find('NoteColumns').find('NoteColumn').find('Instrument').text)
-			dctl[index] |= (1<<instr)
+			if index < nl:
+				dctl[index] |= (1<<instr)
 	dctls.extend(dctl)
 
 #print bpm, dctls, len(dctls)
 ##print 
 
-print "static struct song song_data_%s = {" % name
-print "\t%d," % bpm
-print "\t%d," % lpb
-print "\t%d," % time_signature
-print "\t%d," % len(dctls)
-print "\t{%s}" % ",".join(map(str, dctls))
-print "};"
+with open(sys.argv[2], "w") as f:
+	f.write("static struct song song_data_%s = {" % name)
+	f.write("\t%d," % bpm)
+	f.write("\t%d," % lpb)
+	f.write("\t%d," % time_signature)
+	f.write("\t%d," % len(dctls))
+	f.write("\t{%s}" % ",".join(map(str, dctls)))
+	f.write("};")
