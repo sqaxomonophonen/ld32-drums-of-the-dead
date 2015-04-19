@@ -390,6 +390,9 @@ static void piano_roll_update_gauge(struct piano_roll* p)
 		piano_roll_gauge_dstep(p, match, dstep_min);
 	}
 	p->gauge_last_step = step_until;
+
+	if (p->gauge > 1.0) p->gauge = 1.0;
+	if (p->gauge < 0.0) p->gauge = 0.0;
 }
 
 static void piano_roll_gauge_play(struct piano_roll* p, struct played_note* note)
