@@ -920,6 +920,29 @@ static void zombie_director_render(struct zombie_director* zd, uint32_t* screen)
 	}
 }
 
+struct bass {
+	struct img img;
+};
+
+static void bass_init(struct bass* bass)
+{
+	memset(bass, 0, sizeof(*bass));
+
+	// assets/bassp.png PNG 88x400 88x400+0+0 8-bit sRGB 13c 1.27KB 0.000u 0:00.000
+	// 80 pixels per anim
+	img_load(&bass->img, "bassp.png");
+	ASSERT(bass->img.width == 88);
+	ASSERT(bass->img.height == 400);
+}
+
+static void bass_render(struct bass* bass, uint32_t* screen, int step)
+{
+	int anim_offset = 80;
+	int frame = (step>>1) % 5;
+	screen_draw_img(screen, &bass->img, 0, frame * anim_offset, 78, 103, 80, anim_offset);
+}
+
+
 int main(int argc, char** argv)
 {
 	SAZ(SDL_Init(SDL_INIT_EVERYTHING));
@@ -1003,6 +1026,9 @@ int main(int argc, char** argv)
 	ASSERT(drummer_img.width == 150);
 	ASSERT(drummer_img.height == 240);
 
+	struct bass bass;
+	bass_init(&bass);
+
 	struct zombie_director zombie_director;
 	zombie_director_init(&zombie_director);
 
@@ -1064,8 +1090,10 @@ int main(int argc, char** argv)
 				drum_control_cooldown[drum_id]--;
 			}
 		}
-		if (((int)(audio_position_to_seconds(&audio, audio_position) * 2))&1) {
-			// FIXME set from bpm
+
+		int step = (int)((audio_position_to_seconds(&audio, audio_position) * (float)piano_roll.song->bpm * (float)piano_roll.song->lpb) / 60.0);
+
+		if (step & 4) {
 			cool_drum_control |= DRUM_CONTROL_HEAD;
 		}
 
@@ -1076,6 +1104,7 @@ int main(int argc, char** argv)
 
 		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
 		draw_drummer(screen, &drummer_img, cool_drum_control);
+		bass_render(&bass, screen, step);
 		piano_roll_render(&piano_roll, screen);
 		zombie_director_render(&zombie_director, screen);
 
