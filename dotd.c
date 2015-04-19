@@ -186,13 +186,18 @@ struct sample_ctx {
 	// float rate; +/- 1.0? TODO
 };
 
+#define DRUM_CONTROL_RING_LENGTH (32)
 struct audio {
 	SDL_AudioDeviceID device;
 	uint32_t sample_rate;
 	struct rng rng;
 
 	SDL_mutex* mutex;
-	uint32_t drum_control;
+
+	uint32_t drum_control_ring[DRUM_CONTROL_RING_LENGTH];
+	uint32_t drum_control_write_cursor;
+	uint32_t drum_control_read_cursor;
+	
 	int drum_control_feedback_cursor;
 	struct drum_control_feedback drum_control_feedback[DRUM_CONTROL_FEEDBACK_N];
 
@@ -221,6 +226,14 @@ static void audio_unlock(struct audio* audio)
 	SDL_UnlockMutex(audio->mutex);
 }
 
+// XXX audio lock assumed!
+static void audio_emit_drum_control(struct audio* audio, uint32_t drum_control)
+{
+	if (!drum_control) return;
+	audio->drum_control_ring[audio->drum_control_write_cursor] = drum_control;
+	audio->drum_control_write_cursor = (audio->drum_control_write_cursor + 1) & (DRUM_CONTROL_RING_LENGTH-1);
+}
+
 static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 {
 	struct audio* audio = userdata;
@@ -228,7 +241,13 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 	int n = bytes / sizeof(float) / 2;
 
 	audio_lock(audio);
-	uint32_t drum_control = audio->drum_control;
+	uint32_t drum_control = 0;
+	//printf("%d %d\n", audio->drum_control_read_cursor, audio->drum_control_write_cursor);
+	while (audio->drum_control_read_cursor != audio->drum_control_write_cursor) {
+		drum_control |= audio->drum_control_ring[audio->drum_control_read_cursor];
+		//printf("read %d\n", drum_control);
+		audio->drum_control_read_cursor = (audio->drum_control_read_cursor + 1) & (DRUM_CONTROL_RING_LENGTH-1);
+	}
 	audio_unlock(audio);
 
 	// trigger drums
@@ -289,16 +308,11 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 
 	audio_lock(audio);
 	{
-
 		// advance drum control feedback, register what happened and when
 		audio->drum_control_feedback_cursor = (audio->drum_control_feedback_cursor + 1) & DRUM_CONTROL_FEEDBACK_MASK;
 		struct drum_control_feedback* f = &audio->drum_control_feedback[audio->drum_control_feedback_cursor];
 		f->position = audio->position;
-		f->value = audio->drum_control;
-
-		// clear drum control
-		audio->drum_control = 0;
-
+		f->value = drum_control;
 	}
 	audio_unlock(audio);
 
@@ -591,7 +605,7 @@ static void screen_draw_img_pain(uint32_t* screen, struct img* img, int x0, int 
 }
 
 
-static uint32_t drum_color(drum_id)
+static uint32_t drum_color(int drum_id)
 {
 	switch (drum_id) {
 		case DRUM_ID_KICK: return mkcol(225,32,6);
@@ -602,7 +616,7 @@ static uint32_t drum_color(drum_id)
 	}
 }
 
-static uint32_t drum_color_light(drum_id)
+static uint32_t drum_color_light(int drum_id)
 {
 	switch (drum_id) {
 		case DRUM_ID_KICK: return mkcol(251,130,114);
@@ -613,7 +627,7 @@ static uint32_t drum_color_light(drum_id)
 	}
 }
 
-static uint32_t drum_color_overlay(drum_id)
+static uint32_t drum_color_overlay(int drum_id)
 {
 	switch (drum_id) {
 		case DRUM_ID_KICK: return mkcol(101,14,2);
@@ -624,7 +638,7 @@ static uint32_t drum_color_overlay(drum_id)
 	}
 }
 
-static uint32_t drum_color_dim(drum_id)
+static uint32_t drum_color_dim(int  drum_id)
 {
 	switch (drum_id) {
 		case DRUM_ID_KICK: return mkcol(47,4,0);
@@ -1436,7 +1450,7 @@ int main(int argc, char** argv)
 				}
 				feedback_cursor = (feedback_cursor + 1) & DRUM_CONTROL_FEEDBACK_MASK;
 			}
-			audio.drum_control |= drum_control;
+			audio_emit_drum_control(&audio, drum_control);
 		}
 		audio_unlock(&audio);
 
