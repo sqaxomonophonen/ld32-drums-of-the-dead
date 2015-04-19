@@ -652,8 +652,8 @@ static void draw_drummer(uint32_t* screen, struct img* img, uint32_t drum_contro
 	static 40,1 26x26 - 27,39
 	#endif
 
-	int x = 64;
-	int y = 64;
+	int x = 45;
+	int y = 112;
 	int actoff = img->height >> 1;
 
 	// histick
@@ -794,7 +794,8 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 	float tick_time = 0.05f;
 	int spawn_ticks = 12;
 	int zombie_start_x = 270;
-	int zombie_start_y = 40;
+	int zombie_start_y = 72;
+	int zombie_start_y_spread = 45;
 	int zombie_cycle_dx = 60;
 	int zombie_frame_count = 12;
 	int gib_duration = 7;
@@ -821,7 +822,7 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 					found->active = 1;
 					found->frame = 0;
 					found->x = zombie_start_x;
-					found->y = zombie_start_y + (ri&31);
+					found->y = zombie_start_y + (ri%zombie_start_y_spread);
 					found->style = (ri>>5)%10;
 				}
 			}
@@ -852,7 +853,7 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 			int effective_x = zombie_effective_x(z);
 			float effective_xf = (float)effective_x / (float)SCREEN_WIDTH;
 			int zombie_must_die = 0;
-			if (effective_xf < gauge*0.9) {
+			if (effective_xf < gauge*0.8) {
 				zombie_must_die = 1;
 			}
 			if (zombie_must_die) z->gib = 1;
@@ -990,6 +991,11 @@ int main(int argc, char** argv)
 	drum_control_keymap['.'] = DRUM_CONTROL_HIHAT;
 	drum_control_keymap['/'] = DRUM_CONTROL_OPEN;
 
+	struct img bg_img;
+	// assets/background.png PNG 384x216 384x216+0+0 8-bit sRGB 256c 2.22KB 0.000u 0:00.000
+	img_load(&bg_img, "background.png");
+	ASSERT(bg_img.width == SCREEN_WIDTH);
+	ASSERT(bg_img.height == SCREEN_HEIGHT);
 
 	struct img drummer_img;
 	// drummerp.png PNG 150x240 150x240+0+0 8-bit sRGB 26c 1.77KB 0.000u 0:00.000
@@ -1068,6 +1074,7 @@ int main(int argc, char** argv)
 
 		zombie_director_update(&zombie_director, &piano_roll, 1.0f / (float)mode.refresh_rate);
 
+		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
 		draw_drummer(screen, &drummer_img, cool_drum_control);
 		piano_roll_render(&piano_roll, screen);
 		zombie_director_render(&zombie_director, screen);
