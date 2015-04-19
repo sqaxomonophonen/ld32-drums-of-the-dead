@@ -519,6 +519,34 @@ static void screen_draw_img(uint32_t* screen, struct img* img, int x0, int y0, i
 	}
 }
 
+static void screen_draw_img_color(uint32_t* screen, struct img* img, int x0, int y0, int x1, int y1, int w, int h, uint32_t color)
+{
+	if (!screen_clip_rect(&x1, &y1, &w, &h, &x0, &y0)) return;
+
+	int i0 = x0 + y0 * img->width;
+	int i1 = x1 + y1 * SCREEN_WIDTH;
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
+			uint32_t s0 = img->data[i0];
+			if ((s0 & 0xffffff) != 0xff00ff) screen[i1] = color;
+			i0++;
+			i1++;
+		}
+		i0 += img->width - w;
+		i1 += SCREEN_WIDTH - w;
+	}
+}
+
+static void screen_draw_img_pain(uint32_t* screen, struct img* img, int x0, int y0, int x1, int y1, int w, int h, int pain)
+{
+	if (pain) {
+		screen_draw_img_color(screen, img, x0, y0, x1, y1, w, h, mkcol(255,255,255));
+	} else {
+		screen_draw_img(screen, img, x0, y0, x1, y1, w, h);
+	}
+}
+
+
 static uint32_t drum_color(drum_id)
 {
 	switch (drum_id) {
@@ -698,9 +726,30 @@ struct zombie {
 	int style;
 	int pause;
 	int stagger;
+	int gib;
 	int x;
 	int y;
 };
+
+static int zombie_effective_x(struct zombie* z)
+{
+	const int dx [] = {
+		120, // frame 1
+		115, // frame 2
+		104, // frame 3
+		91,  // frame 4
+		102, // frame 5
+		99,  // frame 6
+		90,  // frame 7
+		85,  // frame 8
+		75,  // frame 9
+		61,  // frame 10
+		72,  // frame 11
+		69,  // frame 12
+
+	};
+	return z->x + dx[z->frame];
+}
 
 struct zombie_director {
 	struct img imgs[10];
@@ -742,12 +791,13 @@ static void zombie_director_init(struct zombie_director* zd)
 
 static void zombie_director_update(struct zombie_director* zd, struct piano_roll* piano_roll, float dt)
 {
-	float tick_time = 0.1f;
-	int spawn_ticks = 6;
+	float tick_time = 0.05f;
+	int spawn_ticks = 12;
 	int zombie_start_x = 270;
 	int zombie_start_y = 40;
 	int zombie_cycle_dx = 60;
 	int zombie_frame_count = 12;
+	int gib_duration = 7;
 
 	zd->dt_accum += dt;
 
@@ -782,11 +832,38 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 		// animate the dead
 		for (int i = 0; i < MAX_ZOMBIES; i++) {
 			struct zombie* z = &zd->zombies[i];
+
 			if (!z->active) continue;
+
+			// zombie gib animation
+			if (z->gib) {
+				z->gib++;
+				if (z->gib > gib_duration) {
+					z->active = 0;
+					continue;
+				}
+			}
+
+			if (z->gib) continue;
+
+			if (zd->ticks&1) continue;
+
+			// handle zombie death
+			int effective_x = zombie_effective_x(z);
+			float effective_xf = (float)effective_x / (float)SCREEN_WIDTH;
+			int zombie_must_die = 0;
+			if (effective_xf < gauge*0.9) {
+				zombie_must_die = 1;
+			}
+			if (zombie_must_die) z->gib = 1;
+			
+			// pause
 			if (z->pause > 0) {
 				z->pause--;
 				continue;
 			}
+			
+			// staggering and anim personality
 			uint32_t ri = rng_uint32(&zd->rng);
 			if (z->stagger) {
 				z->stagger = 0;
@@ -806,6 +883,8 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 					z->pause = ri%4;
 					break;
 			}
+
+			// wrap / advance x
 			if (z->frame >= zombie_frame_count) {
 				z->x -= zombie_cycle_dx;
 				z->frame -= zombie_frame_count;
@@ -835,7 +914,8 @@ static void zombie_director_render(struct zombie_director* zd, uint32_t* screen)
 	for (int i = 0; i < MAX_ZOMBIES; i++) {
 		struct zombie* z = &zd->zombies[i];
 		if (!z->active) continue;
-		screen_draw_img(screen, &zd->imgs[z->style], 0, anim_offset * z->frame, z->x, z->y, 163, anim_offset);
+		int pain = z->gib & 1;
+		screen_draw_img_pain(screen, &zd->imgs[z->style], 0, anim_offset * z->frame, z->x, z->y, 163, anim_offset, pain);
 	}
 }
 
