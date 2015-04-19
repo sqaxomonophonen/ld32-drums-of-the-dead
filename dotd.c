@@ -295,7 +295,7 @@ static void audio_init(struct audio* audio)
 	want.freq = 44100;
 	want.format = AUDIO_F32;
 	want.channels = 2;
-	want.samples = 256;
+	want.samples = 512;
 	// XXX ^^^ might want to be able to change this..
 	// 16th notes at 120BPM is 0.125s between notes
 	// 512 samples per callback at 44100hz is ~0.012s per frame, i.e. ~10x
