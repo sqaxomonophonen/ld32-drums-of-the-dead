@@ -939,8 +939,31 @@ static void bass_render(struct bass* bass, uint32_t* screen, int step)
 {
 	int anim_offset = 80;
 	int frame = (step>>1) % 5;
-	screen_draw_img(screen, &bass->img, 0, frame * anim_offset, 78, 103, 80, anim_offset);
+	screen_draw_img(screen, &bass->img, 0, frame * anim_offset, 78, 101, 80, anim_offset);
 }
+
+struct guitar {
+	struct img img;
+};
+
+static void guitar_init(struct guitar* guitar)
+{
+	memset(guitar, 0, sizeof(*guitar));
+	// assets/guitarp.png PNG 65x534 65x534+0+0 8-bit sRGB 11c 1.33KB 0.000u 0:00.000
+	// 89 pixels per anim
+
+	img_load(&guitar->img, "guitarp.png");
+	ASSERT(guitar->img.width == 65);
+	ASSERT(guitar->img.height == 534);
+}
+
+static void guitar_render(struct guitar* guitar, uint32_t* screen, int step)
+{
+	int anim_offset = 89;
+	int frame = (step>>1) % 6;
+	screen_draw_img(screen, &guitar->img, 0, frame * anim_offset, 120, 96, 65, anim_offset);
+}
+
 
 
 int main(int argc, char** argv)
@@ -1029,6 +1052,9 @@ int main(int argc, char** argv)
 	struct bass bass;
 	bass_init(&bass);
 
+	struct guitar guitar;
+	guitar_init(&guitar);
+
 	struct zombie_director zombie_director;
 	zombie_director_init(&zombie_director);
 
@@ -1105,6 +1131,7 @@ int main(int argc, char** argv)
 		memcpy(screen, bg_img.data, SCREEN_WIDTH*SCREEN_HEIGHT*sizeof(uint32_t));
 		draw_drummer(screen, &drummer_img, cool_drum_control);
 		bass_render(&bass, screen, step);
+		guitar_render(&guitar, screen, step);
 		piano_roll_render(&piano_roll, screen);
 		zombie_director_render(&zombie_director, screen);
 
