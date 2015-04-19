@@ -284,8 +284,8 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 		float out[2] = {0,0};
 
 		for (int c = 0; c < 2; c++) {
-			out[c] += audio->bass_buffer[(i<<1)+c];
-			out[c] += audio->guitar_buffer[(i<<1)+c];
+			if (!audio->bass_stopped) out[c] += audio->bass_buffer[(i<<1)+c];
+			if (!audio->guitar_stopped) out[c] += audio->guitar_buffer[(i<<1)+c];
 		}
 
 		// generate drum audio
@@ -1451,6 +1451,10 @@ int main(int argc, char** argv)
 				feedback_cursor = (feedback_cursor + 1) & DRUM_CONTROL_FEEDBACK_MASK;
 			}
 			audio_emit_drum_control(&audio, drum_control);
+
+			// handle player death
+			if (bass_player.dead) audio.bass_stopped = 1;
+			if (guitar_player.dead) audio.guitar_stopped = 1;
 		}
 		audio_unlock(&audio);
 
