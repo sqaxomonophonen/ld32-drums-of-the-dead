@@ -1440,7 +1440,12 @@ int main(int argc, char** argv)
 		drummer_render(&drummer, screen, &giblet_exploder);
 		player_render(&bass_player, screen, step, &giblet_exploder);
 		player_render(&guitar_player, screen, step, &giblet_exploder);
-		piano_roll_render(&piano_roll, screen);
+		if (drummer.dead) {
+			screen_draw_rect(screen, 0, 0, SCREEN_WIDTH, 64, 0);
+		} else {
+			piano_roll_render(&piano_roll, screen);
+		}
+
 		zombie_director_render(&zombie_director, screen, &giblet_exploder);
 
 		present_screen(window, renderer, texture, screen);
