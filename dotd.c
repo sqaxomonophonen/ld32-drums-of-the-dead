@@ -696,6 +696,8 @@ struct zombie {
 	int active;
 	int frame;
 	int style;
+	int pause;
+	int stagger;
 	int x;
 	int y;
 };
@@ -741,7 +743,7 @@ static void zombie_director_init(struct zombie_director* zd)
 static void zombie_director_update(struct zombie_director* zd, struct piano_roll* piano_roll, float dt)
 {
 	float tick_time = 0.1f;
-	int spawn_ticks = 10;
+	int spawn_ticks = 6;
 	int zombie_start_x = 270;
 	int zombie_start_y = 40;
 	int zombie_cycle_dx = 60;
@@ -781,10 +783,35 @@ static void zombie_director_update(struct zombie_director* zd, struct piano_roll
 		for (int i = 0; i < MAX_ZOMBIES; i++) {
 			struct zombie* z = &zd->zombies[i];
 			if (!z->active) continue;
-			z->frame++;
+			if (z->pause > 0) {
+				z->pause--;
+				continue;
+			}
+			uint32_t ri = rng_uint32(&zd->rng);
+			if (z->stagger) {
+				z->stagger = 0;
+				z->frame--;
+			} else {
+				z->frame++;
+			}
+			switch (z->frame) {
+				case 0: case 6: // stagger?
+					z->stagger = ((ri/10)%3) == 0;
+					z->pause = ri%4;
+					break;
+				case 11: case 5: // stagger?
+					z->pause = ri%4;
+					break;
+				case 3: case 9: // pause?
+					z->pause = ri%4;
+					break;
+			}
 			if (z->frame >= zombie_frame_count) {
 				z->x -= zombie_cycle_dx;
-				z->frame = 0;
+				z->frame -= zombie_frame_count;
+			} else if (z->frame < 0) {
+				z->x += zombie_cycle_dx;
+				z->frame += zombie_frame_count;
 			}
 		}
 
