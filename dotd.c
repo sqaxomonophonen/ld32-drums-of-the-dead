@@ -552,10 +552,43 @@ static void screen_draw_img_pain(uint32_t* screen, struct img* img, int x0, int 
 static uint32_t drum_color(drum_id)
 {
 	switch (drum_id) {
-		case DRUM_ID_KICK: return mkcol(179,29,5);
-		case DRUM_ID_SNARE: return mkcol(255,191,37);
-		case DRUM_ID_HIHAT: return mkcol(85,195,235);
+		case DRUM_ID_KICK: return mkcol(225,32,6);
+		case DRUM_ID_SNARE: return mkcol(254,200,69);
+		case DRUM_ID_HIHAT: return mkcol(110,206,237);
 		case DRUM_ID_OPEN: return mkcol(255,255,255);
+		default: return 0;
+	}
+}
+
+static uint32_t drum_color_light(drum_id)
+{
+	switch (drum_id) {
+		case DRUM_ID_KICK: return mkcol(251,130,114);
+		case DRUM_ID_SNARE: return mkcol(254,226,159);
+		case DRUM_ID_HIHAT: return mkcol(179,229,246);
+		case DRUM_ID_OPEN: return mkcol(255,255,255);
+		default: return 0;
+	}
+}
+
+static uint32_t drum_color_overlay(drum_id)
+{
+	switch (drum_id) {
+		case DRUM_ID_KICK: return mkcol(101,14,2);
+		case DRUM_ID_SNARE: return mkcol(165,117,0);
+		case DRUM_ID_HIHAT: return mkcol(19,127,162);
+		case DRUM_ID_OPEN: return mkcol(146,146,146);
+		default: return 0;
+	}
+}
+
+static uint32_t drum_color_dim(drum_id)
+{
+	switch (drum_id) {
+		case DRUM_ID_KICK: return mkcol(47,4,0);
+		case DRUM_ID_SNARE: return mkcol(82,54,0);
+		case DRUM_ID_HIHAT: return mkcol(9,63,78);
+		case DRUM_ID_OPEN: return mkcol(74,74,74);
 		default: return 0;
 	}
 }
@@ -564,7 +597,7 @@ static uint32_t drum_color(drum_id)
 static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 {
 	float width_in_seconds = 5.0f;
-	float offset_in_seconds = 1.5f;
+	float offset_in_seconds = 1.05f;
 
 	float bps = piano_roll->song->bpm / 60.0;
 
@@ -575,11 +608,6 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 
 	float x0 = (SCREEN_WIDTH * offset_in_seconds) / width_in_seconds;
 
-	// render cursor
-	{
-		screen_draw_rect(screen, (int)x0-1, 8, 3, 48, mkcol(80,80,80));
-	}
-
 	// render bars
 	int b0 = (int)floorf(current_beat - offset_in_beats);
 	int b1 = b0 + (int)ceilf(width_in_beats) + 1;
@@ -588,20 +616,41 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		for (int sub = 0; sub < 4; sub++) {
 			float bf = (float)b + (float)sub * 0.25f;
 
-			uint32_t color = 0;
+			float x = x0 + (bf - current_beat) * beat_width;
+
+			int width = 0;
+			int th = 0;
 			if (sub == 0) {
 				if ((b % piano_roll->song->time_signature) == 0) {
-					color = mkcol(255,255,255);
+					width = 3;
+					th = 7;
 				} else {
-					color = mkcol(200,200,0);
+					width = 1;
+					th = 3;
 				}
 			} else {
-				color = mkcol(80,80,80);
+				width = 1;
+				th = 1;
 			}
-			float x = x0 + (bf - current_beat) * beat_width;
-			screen_draw_rect(screen, (int)x, 16, 1, 32, color);
+
+
+			for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
+				uint32_t color = 0;
+				if (sub == 0) {
+					color = drum_color_overlay(drum_id);
+				} else {
+					color = drum_color_dim(drum_id);
+				}
+				screen_draw_rect(screen, (int)x-width/2-1, 17 + drum_id*9, width, 7, color);
+			}
+
+			screen_draw_rect(screen, (int)x-width/2-1, 8 + 7-th, width, th, mkcol(255,255,255));
+			screen_draw_rect(screen, (int)x-width/2-1, 53, width, th, mkcol(255,255,255));
 		}
 	}
+
+	int spacing = 9;
+	int y0 = 16;
 
 	// render song
 	int s0 = (int)floorf((current_beat - offset_in_beats) * piano_roll->song->lpb);
@@ -616,8 +665,9 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
 			int mask = 1<<drum_id;
 			if (!(dctl & mask)) continue;
-			screen_draw_rect(screen, (int)x-1, 16+drum_id*8, 3, 2, drum_color(drum_id));
-			screen_draw_rect(screen, (int)x-1, 16+drum_id*8+6, 3, 2, drum_color(drum_id));
+			int width = 5;
+			screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing, 3, 2, drum_color_light(drum_id));
+			screen_draw_rect(screen, (int)x-width/2, y0+drum_id*spacing+7, 3, 2, drum_color_light(drum_id));
 		}
 	}
 
@@ -628,7 +678,7 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		if (note->time_in_seconds <= 0.0) continue;
 		float dt = note->time_in_seconds - piano_roll->time_in_seconds;
 		float x = x0 + dt * second_width;
-		screen_draw_rect(screen, (int)x-2, 16+note->drum_id*8+2, 5, 4, drum_color(note->drum_id));
+		screen_draw_rect(screen, (int)x-2, y0+note->drum_id*spacing+2, 5, 5, drum_color(note->drum_id));
 	}
 
 	// render gauge
