@@ -457,7 +457,7 @@ static void piano_roll_gauge_dstep(struct piano_roll* p, int match, float dstep)
 {
 	float dpenalty = match ? (dstep / (float)p->song->lpb) : 1.0f;
 	if (dpenalty > 1.0f) dpenalty = 1.0f;
-	float good_threshold = 0.30f;
+	float good_threshold = 0.29f;
 	p->gauge -= ((dpenalty * dpenalty) - (good_threshold * good_threshold)) * 0.1f;
 }
 
@@ -716,6 +716,7 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 	float beat_width = SCREEN_WIDTH / width_in_beats;
 	for (int b = b0; b <= b1; b++) {
 		for (int sub = 0; sub < 4; sub++) {
+			if (sub&1) continue;
 			float bf = (float)b + (float)sub * 0.25f;
 
 			float x = x0 + (bf - current_beat) * beat_width;
