@@ -201,6 +201,14 @@ struct audio {
 	struct drum_samples drum_samples;
 
 	struct sample_ctx drum_sample_ctx[DRUM_ID_MAX];
+
+	stb_vorbis* bass_track;
+	stb_vorbis* guitar_track;
+	float* bass_buffer;
+	float* guitar_buffer;
+
+	int bass_stopped;
+	int guitar_stopped;
 };
 
 static void audio_lock(struct audio* audio)
@@ -240,10 +248,26 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 		}
 	}
 
+	int na;
+	if (!audio->bass_stopped) {
+		na = stb_vorbis_get_samples_float_interleaved(audio->bass_track, 2, audio->bass_buffer, bytes / (sizeof(float)));
+		if (na == 0) audio->bass_stopped = 1;
+	}
+	
+	if (!audio->guitar_stopped) {
+		na = stb_vorbis_get_samples_float_interleaved(audio->guitar_track, 2, audio->guitar_buffer, bytes / (sizeof(float)));
+		if (na == 0) audio->guitar_stopped = 1;
+	}
+
 	// generate samples
 	int p = 0;
 	for (int i = 0; i < n; i++) {
 		float out[2] = {0,0};
+
+		for (int c = 0; c < 2; c++) {
+			out[c] += audio->bass_buffer[(i<<1)+c];
+			out[c] += audio->guitar_buffer[(i<<1)+c];
+		}
 
 		// generate drum audio
 		for (int j = 0; j < DRUM_ID_MAX; j++) {
@@ -258,8 +282,10 @@ static void audio_callback(void* userdata, Uint8* stream_u8, int bytes)
 			}
 		}
 
+
 		for (int c = 0; c < 2; c++) stream[p++] = out[c];
 	}
+
 
 	audio_lock(audio);
 	{
@@ -286,6 +312,14 @@ static void audio_init(struct audio* audio)
 
 	rng_seed(&audio->rng, 0);
 
+	int vorbis_error;
+
+	audio->bass_track = stb_vorbis_open_filename(asset_path("basstrack.ogg"), &vorbis_error, NULL);
+	if (audio->bass_track == NULL) arghf("stb_vorbis_open_filename() failed for basstrack (%d)", vorbis_error);
+
+	audio->guitar_track = stb_vorbis_open_filename(asset_path("guitartrack.ogg"), &vorbis_error, NULL);
+	if (audio->guitar_track == NULL) arghf("stb_vorbis_open_filename() failed for guitartrack (%d)", vorbis_error);
+
 	audio->mutex = SDL_CreateMutex();
 	SAN(audio->mutex);
 
@@ -311,6 +345,11 @@ static void audio_init(struct audio* audio)
 	if (audio->device == 0) arghf("SDL_OpenAudioDevice: %s", SDL_GetError());
 
 	audio->sample_rate = have.freq;
+
+	audio->bass_buffer = malloc(sizeof(float) * 2 * have.samples);
+	AN(audio->bass_buffer);
+	audio->guitar_buffer = malloc(sizeof(float) * 2 * have.samples);
+	AN(audio->guitar_buffer);
 
 	SDL_PauseAudioDevice(audio->device, 0);
 }
