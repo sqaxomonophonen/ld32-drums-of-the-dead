@@ -360,7 +360,7 @@ static void piano_roll_gauge_dstep(struct piano_roll* p, int match, float dstep)
 {
 	float dpenalty = match ? (dstep / (float)p->song->lpb) : 1.0f;
 	if (dpenalty > 1.0f) dpenalty = 1.0f;
-	float good_threshold = 0.25f;
+	float good_threshold = 0.30f;
 	p->gauge -= ((dpenalty * dpenalty) - (good_threshold * good_threshold)) * 0.1f;
 }
 
