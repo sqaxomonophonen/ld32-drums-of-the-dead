@@ -1,10 +1,10 @@
 CC=clang
-OPT=-O3
+OPT=-O2
 #OPT=-O0 -ggdb3
 CFLAGS=--std=c99 $(OPT) -Wall -I/Library/Frameworks/SDL2.framework/Headers -DBUILD_OSX
 LINK=-lm -framework SDL2
-EXE=dotd
-APP=DOTD
+EXE=Drums\ of\ the\ Dead
+APP=Drums\ of\ the\ Dead
 
 include Makefile.common
 
