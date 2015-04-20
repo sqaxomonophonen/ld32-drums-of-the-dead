@@ -1664,6 +1664,13 @@ int main(int argc, char** argv)
 			font_printf(&font, screen, "audio buffer length: %d\n", 256 << audio_buffer_length_exp);
 			font_set_color(&font, menu_selection == 6 ? select_color : unselect_color);
 			font_printf(&font, screen, "quit to dos");
+
+			font_set_color(&font, mkcol(255,200,150));
+			font_set_cursor(&font, 30, 70);
+			font_printf(&font, screen, "your last gig sucked so much that you raised the dead\n");
+			font_set_color(&font, mkcol(255,255,255));
+			font_set_cursor(&font, 1, 80);
+			font_printf(&font, screen, "now play some awesome drums or else the zombies will devour you!");
 		} else {
 			SDL_Event e;
 			uint32_t drum_control = 0;

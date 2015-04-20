@@ -5,8 +5,8 @@ OPT=-Ofast
 #OPT=-O0 -ggdb3
 CFLAGS=--std=c99 $(OPT) -Wall $(shell $(SDL2_CONFIG) --cflags) -DBUILD_MINGW32
 LINK=-L$(SDL2_BASE)/lib/x86 $(shell $(SDL2_CONFIG) --libs)
-EXE=dotd.exe
-APP=dotd
+EXE=drums_of_the_dead.exe
+APP=drums_of_the_dead
 
 include Makefile.common
 
