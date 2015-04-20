@@ -650,6 +650,56 @@ static void screen_draw_img_pain(uint32_t* screen, struct img* img, int x0, int 
 	}
 }
 
+struct font {
+	struct img img;
+	int x0;
+	int x;
+	int y;
+	char* buffer;
+	uint32_t color;
+};
+
+static void font_init(struct font* font)
+{
+	memset(font, 0, sizeof(*font));
+	img_load(&font->img, "font6.png");
+	font->buffer = malloc(4096);
+	AN(font->buffer);
+}
+
+static void font_set_color(struct font* font, uint32_t color)
+{
+	font->color = color;
+}
+
+static void font_set_cursor(struct font* font, int x, int y)
+{
+	font->x0 = x;
+	font->x = x;
+	font->y = y;
+}
+
+void font_printf(struct font* font, uint32_t* screen, const char* fmt, ...) __attribute__((format (printf, 3, 4)));
+void font_printf(struct font* font, uint32_t* screen, const char* fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	int n = vsprintf(font->buffer, fmt, args);
+	for (int i = 0; i < n; i++) {
+		unsigned char ch = font->buffer[i];
+		if (ch == '\n') {
+			font->x = font->x0;
+			font->y += 9;
+			continue;
+		}
+		int x0 = (ch & 15) * 6;
+		int y0 = (ch >> 4) * 6;
+		screen_draw_img_color(screen, &font->img, x0, y0, font->x, font->y, 6, 6, font->color);
+		font->x += 6;
+	}
+	va_end(args);
+}
+
 
 static uint32_t drum_color(int drum_id)
 {
@@ -696,7 +746,7 @@ static uint32_t drum_color_dim(int  drum_id)
 }
 
 
-static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
+static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen, struct font* font)
 {
 	float width_in_seconds = 5.0f;
 	float offset_in_seconds = 1.05f;
@@ -793,7 +843,17 @@ static void piano_roll_render(struct piano_roll* piano_roll, uint32_t* screen)
 		int dx = piano_roll->gauge * SCREEN_WIDTH;
 		if (dx < 0) dx = 0;
 		if (dx >= SCREEN_WIDTH) dx = SCREEN_WIDTH;
-		screen_draw_rect(screen, 0, 200, dx, 8, mkcol(0,255,0));
+		int green = piano_roll->gauge * 255;
+		if (green < 0) green = 0;
+		if (green > 255) green = 255;
+		int red = 255 - piano_roll->gauge * 255;
+		if (red < 0) red = 0;
+		if (red > 255) red = 255;
+		screen_draw_rect(screen, 0, 201, dx, 7, mkcol(red,green,0));
+
+		font_set_color(font, 0);
+		font_set_cursor(font, 1, 202);
+		font_printf(font, screen, "awesomemeter");
 	}
 }
 
@@ -1360,56 +1420,6 @@ static void player_update(struct player* p, struct zombie_director* zombie_direc
 	}
 }
 
-struct font {
-	struct img img;
-	int x0;
-	int x;
-	int y;
-	char* buffer;
-	uint32_t color;
-};
-
-static void font_init(struct font* font)
-{
-	memset(font, 0, sizeof(*font));
-	img_load(&font->img, "font6.png");
-	font->buffer = malloc(4096);
-	AN(font->buffer);
-}
-
-static void font_set_color(struct font* font, uint32_t color)
-{
-	font->color = color;
-}
-
-static void font_set_cursor(struct font* font, int x, int y)
-{
-	font->x0 = x;
-	font->x = x;
-	font->y = y;
-}
-
-void font_printf(struct font* font, uint32_t* screen, const char* fmt, ...) __attribute__((format (printf, 3, 4)));
-void font_printf(struct font* font, uint32_t* screen, const char* fmt, ...)
-{
-	va_list args;
-	va_start(args, fmt);
-	int n = vsprintf(font->buffer, fmt, args);
-	for (int i = 0; i < n; i++) {
-		unsigned char ch = font->buffer[i];
-		if (ch == '\n') {
-			font->x = font->x0;
-			font->y += 9;
-			continue;
-		}
-		int x0 = (ch & 15) * 6;
-		int y0 = (ch >> 4) * 6;
-		screen_draw_img_color(screen, &font->img, x0, y0, font->x, font->y, 6, 6, font->color);
-		font->x += 6;
-	}
-	va_end(args);
-}
-
 static void player_render(struct player* player, uint32_t* screen, int step, struct giblet_exploder* gx)
 {
 	giblet_exploder_render(gx, screen, player->giblet_owner);
@@ -1740,7 +1750,7 @@ int main(int argc, char** argv)
 			if (drummer.dead) {
 				screen_draw_rect(screen, 0, 0, SCREEN_WIDTH, 64, 0);
 			} else {
-				piano_roll_render(&piano_roll, screen);
+				piano_roll_render(&piano_roll, screen, &font);
 			}
 
 			zombie_director_render(&zombie_director, screen, &giblet_exploder);
