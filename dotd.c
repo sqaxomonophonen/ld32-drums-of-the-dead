@@ -1474,6 +1474,9 @@ int main(int argc, char** argv)
 	SDL_DisplayMode mode;
 	SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(window), &mode);
 
+	int refresh_rate = mode.refresh_rate;
+	if (!refresh_rate) refresh_rate = 60; // #pray
+
 	SDL_Renderer* renderer = SDL_CreateRenderer(
 			window,
 			-1, 
@@ -1711,7 +1714,7 @@ int main(int argc, char** argv)
 			for (int drum_id = 0; drum_id < DRUM_ID_MAX; drum_id++) {
 				int mask = 1<<drum_id;
 				if (drum_control & mask) {
-					int cooldown = drum_id == DRUM_ID_OPEN ? mode.refresh_rate * 2: mode.refresh_rate / 10;
+					int cooldown = drum_id == DRUM_ID_OPEN ? refresh_rate * 2 : refresh_rate / 10;
 					drum_control_cooldown[drum_id] = cooldown;
 					// open/close hihack
 					if (drum_id == DRUM_ID_HIHAT) drum_control_cooldown[DRUM_ID_OPEN] = 0;
@@ -1733,7 +1736,7 @@ int main(int argc, char** argv)
 			piano_roll_update_position(&piano_roll, &audio, audio_position);
 			piano_roll_update_gauge(&piano_roll);
 
-			float dt = 1.0f / (float)mode.refresh_rate;
+			float dt = 1.0f / (float)refresh_rate;
 
 			zombie_director_update(&zombie_director, &piano_roll, dt, &giblet_exploder);
 			drummer_update(&drummer, cool_drum_control, &zombie_director, dt, &giblet_exploder);
