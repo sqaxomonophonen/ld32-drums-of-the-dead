@@ -16,7 +16,4 @@ void arghf(const char* fmt, ...) __attribute__((noreturn)) __attribute__((format
 #define SAZ(expr) do { SDL_ASSERT((expr) == 0); } while(0)
 #define SAN(expr) do { SDL_ASSERT((expr) != 0); } while(0)
 
-// GL
-#define CHKGL do { GLenum xx_GLERR = glGetError(); if (xx_GLERR != GL_NO_ERROR) arghf("OPENGL ERROR %d in %s:%d", xx_GLERR, __FILE__, __LINE__); } while (0)
-
 #endif/*_A_H_*/
