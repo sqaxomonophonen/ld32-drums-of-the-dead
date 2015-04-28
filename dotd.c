@@ -864,9 +864,11 @@ static void present_screen(SDL_Window* window, SDL_Renderer* renderer, SDL_Textu
 
 	SDL_UpdateTexture(texture, NULL, screen, SCREEN_WIDTH * sizeof(uint32_t));
 
-	int window_width;
-	int window_height;
-	SDL_GetWindowSize(window, &window_width, &window_height);
+	SDL_DisplayMode mode;
+	SDL_GetDesktopDisplayMode(SDL_GetWindowDisplayIndex(window), &mode);
+
+	int window_width = mode.w;
+	int window_height = mode.h;
 
 	float window_aspect = (float)window_width / (float)window_height;
 	float screen_aspect = (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT;
